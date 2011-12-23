@@ -543,5 +543,5 @@ See also code table:
 
 SEE ALSO
 
-perl, Sjis.pm
+perl, GB18030.pm, Egb18030.pm, jacode.pl
 
