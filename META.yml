@@ -1,7 +1,7 @@
 --- #YAML:1.0
 name: GB18030
 abstract: Source code filter for GB18030 script
-version: 0.81
+version: 0.82
 author:
   - INABA Hitoshi <ina@cpan.org>
 license: perl
