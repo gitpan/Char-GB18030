@@ -1,7 +1,7 @@
 package GB18030;
 ######################################################################
 #
-# GB18030 - Source code filter to GB18030 script
+# GB18030 - Source code filter to escape GB18030 script
 #
 # Copyright (c) 2008, 2009, 2010, 2011, 2012 INABA Hitoshi <ina@cpan.org>
 #
@@ -13,10 +13,10 @@ BEGIN {
     if ($^X =~ / jperl /oxmsi) {
         die __FILE__, ": needs perl(not jperl) 5.00503 or later. (\$^X==$^X)";
     }
-    if (ord('A') == 193) {
+    if (CORE::ord('A') == 193) {
         die __FILE__, ": is not US-ASCII script (may be EBCDIC or EBCDIK script).";
     }
-    if (ord('A') != 0x41) {
+    if (CORE::ord('A') != 0x41) {
         die __FILE__, ": is not US-ASCII script (must be US-ASCII script).";
     }
 }
@@ -27,7 +27,7 @@ BEGIN {
 # (and so on)
 
 BEGIN { eval q{ use vars qw($VERSION) } }
-$VERSION = sprintf '%d.%02d', q$Revision: 0.82 $ =~ /(\d+)/oxmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.83 $ =~ /(\d+)/oxmsg;
 
 use Egb18030;
 
@@ -89,7 +89,7 @@ my  $q_char   = qr/$your_char/oxms;
 # of ISBN 1-56592-224-7 CJKV Information Processing
 
 my $anchor = '';
-$anchor = q{@{Egb18030::anchor}};
+$anchor = q{${Egb18030::anchor}};
 
 BEGIN { eval q{ use vars qw($nest) } }
 
@@ -183,10 +183,9 @@ my $q_angle    = qr{(?{local $nest=0}) (?>(?:
 # in Chapter 29. Pragmatic Modules
 # of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
 
-my $use_re_eval = '';
 my $matched     = '';
 my $s_matched   = '';
-$matched        = q{@Egb18030::matched};
+$matched        = q{$Egb18030::matched};
 $s_matched      = q{ Egb18030::s_matched();};
 
 my $tr_variable   = '';   # variable of tr///
@@ -459,7 +458,7 @@ sub GB18030::escape_script {
         # in Chapter 5: Pattern Matching
         # of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
 
-        $e_script .= sprintf("use Egb18030 %s;\n%s", $Egb18030::VERSION, $use_re_eval); # require run-time routines version
+        $e_script .= sprintf("use Egb18030 %s;\n", $GB18030::VERSION); # require run-time routines version
 
         # use GB18030 version qw(ord reverse);
         $function_ord     = 'ord';
@@ -469,10 +468,32 @@ sub GB18030::escape_script {
 
             # require version
             my $list = $1;
-            if ($list =~ s/\A ([0-9]+(?:\.[0-9]*)) \s* //oxms) {
+            if ($list =~ s/\A ([0-9]+\.[0-9]+) \.0 \s* //oxms) {
                 my $version = $1;
-                if ($version > $VERSION) {
-                    die __FILE__, ": version $version required--this is only version $VERSION";
+                if ($version ne $GB18030::VERSION) {
+                    my @file = grep -e, map {qq{$_/GB18030.pm}} @INC;
+                    my %file = map { $_ => 1 } @file;
+                    if (scalar(keys %file) >= 2) {
+                        my $file = join "\n", sort keys %file;
+                        warn <<END;
+****************************************************
+                   C A U T I O N
+
+              CONFLICT GB18030.pm FILE
+
+$file
+****************************************************
+
+END
+                    }
+                    die "Script $0 expects GB18030.pm $version, but @{[__FILE__]} is version $GB18030::VERSION\n";
+                }
+                $e_script .= qq{die "Script \$0 expects Egb18030.pm $version, but \\\$Egb18030::VERSION is \$Egb18030::VERSION" if \$Egb18030::VERSION ne '$version';\n};
+            }
+            elsif ($list =~ s/\A ([0-9]+(?:\.[0-9]*)) \s* //oxms) {
+                my $version = $1;
+                if ($version > $GB18030::VERSION) {
+                    die "Script $0 required GB18030.pm $version, but @{[__FILE__]} is only version $GB18030::VERSION\n";
                 }
             }
 
@@ -2695,10 +2716,10 @@ sub character_class {
 
     if ($char eq '.') {
         if ($modifier =~ /s/) {
-            return '@{Egb18030::dot_s}';
+            return '${Egb18030::dot_s}';
         }
         else {
-            return '@{Egb18030::dot}';
+            return '${Egb18030::dot}';
         }
     }
     else {
@@ -2827,8 +2848,6 @@ sub e_qq {
 
     $slash = 'div';
 
-    my $metachar = qr/[\@\\\|]/oxms; # '|' is for qx//, ``, open() and system()
-
     my $left_e  = 0;
     my $right_e = 0;
     my @char = $string =~ /\G(
@@ -2876,7 +2895,9 @@ sub e_qq {
         }
 
         # escape last octet of multiple-octet
-        elsif ($char[$i] =~ /\A ([\x80-\xFF].*) ($metachar|\Q$delimiter\E|\Q$end_delimiter\E) \z/xms) {
+        # my $metachar = qr/[\@\\\|]/oxms; # '|' is for qx//, ``, open() and system()
+        # variable $delimiter and $end_delimiter can be ''
+        elsif ($char[$i] =~ /\A ([\x80-\xFF].*) ([\@\\\|$delimiter$end_delimiter]) \z/xms) {
             $char[$i] = $1 . '\\' . $2;
         }
 
@@ -3395,19 +3416,19 @@ sub e_qr {
             $char[$i] = Egb18030::hexchr($1);
         }
 
-        # \N{CHARNAME} --> N{CHARNAME}
-        elsif ($char[$i] =~ /\A \\ ( N\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \N{CHARNAME} --> N\{CHARNAME}
+        elsif ($char[$i] =~ /\A \\ (N) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \p{PROPERTY} --> p{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( p\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \p{PROPERTY} --> p\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (p) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \P{PROPERTY} --> P{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( P\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \P{PROPERTY} --> P\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (P) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
         # \p, \P, \X --> p, P, X
@@ -4071,19 +4092,19 @@ sub e_s1 {
             $char[$i] = Egb18030::hexchr($1);
         }
 
-        # \N{CHARNAME} --> N{CHARNAME}
-        elsif ($char[$i] =~ /\A \\ ( N\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \N{CHARNAME} --> N\{CHARNAME}
+        elsif ($char[$i] =~ /\A \\ (N) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \p{PROPERTY} --> p{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( p\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \p{PROPERTY} --> p\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (p) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \P{PROPERTY} --> P{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( P\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \P{PROPERTY} --> P\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (P) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
         # \p, \P, \X --> p, P, X
@@ -4705,8 +4726,8 @@ sub e_sub {
         # s///gr with multibyte anchoring
         elsif ($modifier =~ /g/oxms) {
             $sub = sprintf(
-                #      1  2    3   4  5              6   7 8   9               10 11   12  1314    15      16           17            18      19     20          21         22               23
-                q<eval{%s %s_t=%s; %s %s_a=''; while(%s_t%s%s){%s local $^W=0; %s %s_r=%s; %s%s_t="%s_a${1}%s_r$'"; pos(%s_t)=length "%s_a${1}%s_r"; %s_a=substr(%s_t,0,pos(%s_t)); } return %s_t}>,
+                #      1  2    3   4  5              6       7   8               9  10   11  1213    14      15           16            17      18     19          20         21               22
+                q<eval{%s %s_t=%s; %s %s_a=''; while(%s_t =~ %s){%s local $^W=0; %s %s_r=%s; %s%s_t="%s_a${1}%s_r$'"; pos(%s_t)=length "%s_a${1}%s_r"; %s_a=substr(%s_t,0,pos(%s_t)); } return %s_t}>,
 
                 $local,                                                                       #  1
                     $variable_basename,                                                       #  2
@@ -4714,15 +4735,15 @@ sub e_sub {
                 $local,                                                                       #  4
                     $variable_basename,                                                       #  5
                     $variable_basename,                                                       #  6
-                $bind_operator,                                                               #  7
-                ($delimiter1 eq "'") ?                                                        #  8
+                ($delimiter1 eq "'") ?                                                        #  7
                 e_s1_q('m', $delimiter1, $end_delimiter1, $pattern, $modifier) :              #  :
                 e_s1  ('m', $delimiter1, $end_delimiter1, $pattern, $modifier),               #  :
-                $s_matched,                                                                   #  9
-                $local,                                                                       # 10
-                    $variable_basename,                                                       # 11
-                $e_replacement,                                                               # 12
-                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 13
+                $s_matched,                                                                   #  8
+                $local,                                                                       #  9
+                    $variable_basename,                                                       # 10
+                $e_replacement,                                                               # 11
+                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 12
+                    $variable_basename,                                                       # 13
                     $variable_basename,                                                       # 14
                     $variable_basename,                                                       # 15
                     $variable_basename,                                                       # 16
@@ -4732,34 +4753,32 @@ sub e_sub {
                     $variable_basename,                                                       # 20
                     $variable_basename,                                                       # 21
                     $variable_basename,                                                       # 22
-                    $variable_basename,                                                       # 23
             );
         }
 
         # s///gr without multibyte anchoring
         elsif ($modifier =~ /g/oxms) {
             $sub = sprintf(
-                #      1  2    3         4   5 6   7               8  9    10  1112      13           14              15              16
-                q<eval{%s %s_t=%s; while(%s_t%s%s){%s local $^W=0; %s %s_r=%s; %s%s_t="$`%s_r$'"; pos(%s_t)=length "$`%s_r"; } return %s_t}>,
+                #      1  2    3         4       5   6               7  8    9   1011      12           13              14              15
+                q<eval{%s %s_t=%s; while(%s_t =~ %s){%s local $^W=0; %s %s_r=%s; %s%s_t="$`%s_r$'"; pos(%s_t)=length "$`%s_r"; } return %s_t}>,
 
                 $local,                                                                       #  1
                     $variable_basename,                                                       #  2
                 $variable,                                                                    #  3
                     $variable_basename,                                                       #  4
-                $bind_operator,                                                               #  5
-                ($delimiter1 eq "'") ?                                                        #  6
+                ($delimiter1 eq "'") ?                                                        #  5
                 e_s1_q('m', $delimiter1, $end_delimiter1, $pattern, $modifier) :              #  :
                 e_s1  ('m', $delimiter1, $end_delimiter1, $pattern, $modifier),               #  :
-                $s_matched,                                                                   #  7
-                $local,                                                                       #  8
-                    $variable_basename,                                                       #  9
-                $e_replacement,                                                               # 10
-                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 11
+                $s_matched,                                                                   #  6
+                $local,                                                                       #  7
+                    $variable_basename,                                                       #  8
+                $e_replacement,                                                               #  9
+                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 10
+                    $variable_basename,                                                       # 11
                     $variable_basename,                                                       # 12
                     $variable_basename,                                                       # 13
                     $variable_basename,                                                       # 14
                     $variable_basename,                                                       # 15
-                    $variable_basename,                                                       # 16
             );
         }
 
@@ -4770,22 +4789,21 @@ sub e_sub {
             $prematch = q{${1}};
 
             $sub = sprintf(
-                #  1 2 3          4               5  6    7   8  9 10          11
-                q<(%s%s%s) ? eval{%s local $^W=0; %s %s_r=%s; %s"%s%s_r$'" } : %s>,
+                #  1     2          3               4  5    6   7  8 9           10
+                q<(%s =~ %s) ? eval{%s local $^W=0; %s %s_r=%s; %s"%s%s_r$'" } : %s>,
 
                 $variable,                                                                    #  1
-                $bind_operator,                                                               #  2
-                ($delimiter1 eq "'") ?                                                        #  3
+                ($delimiter1 eq "'") ?                                                        #  2
                 e_s1_q('m', $delimiter1, $end_delimiter1, $pattern, $modifier) :              #  :
                 e_s1  ('m', $delimiter1, $end_delimiter1, $pattern, $modifier),               #  :
-                $s_matched,                                                                   #  4
-                $local,                                                                       #  5
-                    $variable_basename,                                                       #  6
-                $e_replacement,                                                               #  7
-                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, #  8
-                $prematch,                                                                    #  9
-                    $variable_basename,                                                       # 10
-                $variable,                                                                    # 11
+                $s_matched,                                                                   #  3
+                $local,                                                                       #  4
+                    $variable_basename,                                                       #  5
+                $e_replacement,                                                               #  6
+                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, #  7
+                $prematch,                                                                    #  8
+                    $variable_basename,                                                       #  9
+                $variable,                                                                    # 10
             );
         }
 
@@ -4803,33 +4821,33 @@ sub e_sub {
         # s///g with multibyte anchoring
         elsif ($modifier =~ /g/oxms) {
             $sub = sprintf(
-                #      1  2       3  4              5 6 7   8               9  10   11  1213  14      15           16          17      18     19          20       21    22             23
-                q<eval{%s %s_n=0; %s %s_a=''; while(%s%s%s){%s local $^W=0; %s %s_r=%s; %s%s="%s_a${1}%s_r$'"; pos(%s)=length "%s_a${1}%s_r"; %s_a=substr(%s,0,pos(%s)); %s_n++} return %s_n}>,
+                #      1  2       3  4              5     6   7               8  9    10  1112  13      14           15          16      17     18          19       20    21             2223
+                q<eval{%s %s_n=0; %s %s_a=''; while(%s =~ %s){%s local $^W=0; %s %s_r=%s; %s%s="%s_a${1}%s_r$'"; pos(%s)=length "%s_a${1}%s_r"; %s_a=substr(%s,0,pos(%s)); %s_n++} return %s%s_n}>,
 
                 $local,                                                                       #  1
                     $variable_basename,                                                       #  2
                 $local,                                                                       #  3
                     $variable_basename,                                                       #  4
                 $variable,                                                                    #  5
-                $bind_operator,                                                               #  6
-                ($delimiter1 eq "'") ?                                                        #  7
+                ($delimiter1 eq "'") ?                                                        #  6
                 e_s1_q('m', $delimiter1, $end_delimiter1, $pattern, $modifier) :              #  :
                 e_s1  ('m', $delimiter1, $end_delimiter1, $pattern, $modifier),               #  :
-                $s_matched,                                                                   #  8
-                $local,                                                                       #  9
-                    $variable_basename,                                                       # 10
-                $e_replacement,                                                               # 11
-                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 12
-                $variable,                                                                    # 13
+                $s_matched,                                                                   #  7
+                $local,                                                                       #  8
+                    $variable_basename,                                                       #  9
+                $e_replacement,                                                               # 10
+                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 11
+                $variable,                                                                    # 12
+                    $variable_basename,                                                       # 13
                     $variable_basename,                                                       # 14
-                    $variable_basename,                                                       # 15
-                $variable,                                                                    # 16
+                $variable,                                                                    # 15
+                    $variable_basename,                                                       # 16
                     $variable_basename,                                                       # 17
                     $variable_basename,                                                       # 18
-                    $variable_basename,                                                       # 19
+                $variable,                                                                    # 19
                 $variable,                                                                    # 20
-                $variable,                                                                    # 21
-                    $variable_basename,                                                       # 22
+                    $variable_basename,                                                       # 21
+                ($bind_operator =~ / !~ /oxms) ? '!' : '',                                    # 22
                     $variable_basename,                                                       # 23
             );
         }
@@ -4837,26 +4855,26 @@ sub e_sub {
         # s///g without multibyte anchoring
         elsif ($modifier =~ /g/oxms) {
             $sub = sprintf(
-                #      1  2             3 4 5   6               7  8    9   1011    12           13            14     15             16
-                q<eval{%s %s_n=0; while(%s%s%s){%s local $^W=0; %s %s_r=%s; %s%s="$`%s_r$'"; pos(%s)=length "$`%s_r"; %s_n++} return %s_n}>,
+                #      1  2             3     4   5               6  7    8   9 10    11           12            13     14             1516
+                q<eval{%s %s_n=0; while(%s =~ %s){%s local $^W=0; %s %s_r=%s; %s%s="$`%s_r$'"; pos(%s)=length "$`%s_r"; %s_n++} return %s%s_n}>,
 
                 $local,                                                                       #  1
                     $variable_basename,                                                       #  2
                 $variable,                                                                    #  3
-                $bind_operator,                                                               #  4
-                ($delimiter1 eq "'") ?                                                        #  5
+                ($delimiter1 eq "'") ?                                                        #  4
                 e_s1_q('m', $delimiter1, $end_delimiter1, $pattern, $modifier) :              #  :
                 e_s1  ('m', $delimiter1, $end_delimiter1, $pattern, $modifier),               #  :
-                $s_matched,                                                                   #  6
-                $local,                                                                       #  7
-                    $variable_basename,                                                       #  8
-                $e_replacement,                                                               #  9
-                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, # 10
-                $variable,                                                                    # 11
-                    $variable_basename,                                                       # 12
-                $variable,                                                                    # 13
+                $s_matched,                                                                   #  5
+                $local,                                                                       #  6
+                    $variable_basename,                                                       #  7
+                $e_replacement,                                                               #  8
+                sprintf('%s_r=eval %s_r; ', $variable_basename, $variable_basename) x $e_modifier, #  9
+                $variable,                                                                    # 10
+                    $variable_basename,                                                       # 11
+                $variable,                                                                    # 12
+                    $variable_basename,                                                       # 13
                     $variable_basename,                                                       # 14
-                    $variable_basename,                                                       # 15
+                ($bind_operator =~ / !~ /oxms) ? '!' : '',                                    # 15
                     $variable_basename,                                                       # 16
             );
         }
@@ -4868,8 +4886,14 @@ sub e_sub {
             $prematch = q{${1}};
 
             $sub = sprintf(
+
+                ($bind_operator =~ / =~ /oxms) ?
+
                 #  1 2 3          4               5  6    7   8 9   1011
-                q<(%s%s%s) ? eval{%s local $^W=0; %s %s_r=%s; %s%s="%s%s_r$'"; 1 } : undef>,
+                q<(%s%s%s) ? eval{%s local $^W=0; %s %s_r=%s; %s%s="%s%s_r$'"; 1 } : undef> :
+
+                #  1 2 3              4               5  6    7   8 9   1011
+                q<(%s%s%s) ? 1 : eval{%s local $^W=0; %s %s_r=%s; %s%s="%s%s_r$'"; undef }>,
 
                 $variable,                                                                    #  1
                 $bind_operator,                                                               #  2
@@ -5023,19 +5047,19 @@ sub e_split {
             $char[$i] = Egb18030::hexchr($1);
         }
 
-        # \N{CHARNAME} --> N{CHARNAME}
-        elsif ($char[$i] =~ /\A \\ ( N\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \N{CHARNAME} --> N\{CHARNAME}
+        elsif ($char[$i] =~ /\A \\ (N) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \p{PROPERTY} --> p{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( p\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \p{PROPERTY} --> p\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (p) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
-        # \P{PROPERTY} --> P{PROPERTY}
-        elsif ($char[$i] =~ /\A \\ ( P\{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
-            $char[$i] = $1;
+        # \P{PROPERTY} --> P\{PROPERTY}
+        elsif ($char[$i] =~ /\A \\ (P) ( \{ ([^\x81-\xFE0-9\}][^\x81-\xFE\}]*) \} ) \z/oxms) {
+            $char[$i] = $1 . '\\' . $2;
         }
 
         # \p, \P, \X --> p, P, X
@@ -5657,14 +5681,16 @@ __END__
 
 =head1 NAME
 
-GB18030 - Source code filter to escape GB18030
+GB18030 - Source code filter to escape GB18030 script
 
 =head1 SYNOPSIS
 
   use GB18030;
-  use GB18030 version;         --- require version
+  use GB18030 ver.sion;        --- require minimum version
+  use GB18030 ver.sion.0;      --- expects version (match or die)
   use GB18030 qw(ord reverse); --- demand enhanced feature of ord and reverse
-  use GB18030 version qw(ord reverse);
+  use GB18030 ver.sion qw(ord reverse);
+  use GB18030 ver.sion.0 qw(ord reverse);
 
   # "no GB18030;" not supported
 
@@ -5736,9 +5762,20 @@ Shall we escape from the encode problem?
 
 =head1 Yet Another Future Of
 
-JPerl is very useful software. -- Oops, note, this "JPerl" means Japanized or
-Japanese Perl, so is unrelated to Java and JVM. Therefore, I named this software
-better, fitter GB18030.
+JPerl is very useful software. -- Oops, note, this "JPerl" means "Japanized Perl"
+or "Japanese Perl". Therefore, it is unrelated to JPerl of the following.
+
+ JPerl is an implementation of Perl written in Java.
+ http://www.javainc.com/projects/jperl/
+ 
+ jPerl - Perl on the JVM
+ http://www.dzone.com/links/175948.html
+ 
+ Jamie's PERL scripts for bioinformatics
+ http://code.google.com/p/jperl/
+ 
+ jperl (Jonathan Perl)
+ https://github.com/jperl
 
 Now, the last version of JPerl is 5.005_04 and is not maintained now.
 
@@ -5839,17 +5876,25 @@ I am glad that I could confirm my idea is not so wrong.
    perl514.bat           --- find and run perl5.14 without %PATH% settings
    perl516.bat           --- find and run perl5.16 without %PATH% settings
    perl64.bat            --- find and run perl64   without %PATH% settings
+   perl64512.bat         --- find and run perl5.12 (x64) without %PATH% settings
+   perl64514.bat         --- find and run perl5.14 (x64) without %PATH% settings
+   perl64516.bat         --- find and run perl5.16 (x64) without %PATH% settings
    aperl58.bat           --- find and run ActivePerl 5.8  without %PATH% settings
    aperl510.bat          --- find and run ActivePerl 5.10 without %PATH% settings
    aperl512.bat          --- find and run ActivePerl 5.12 without %PATH% settings
    aperl514.bat          --- find and run ActivePerl 5.14 without %PATH% settings
    aperl516.bat          --- find and run ActivePerl 5.16 without %PATH% settings
+   aperl64512.bat        --- find and run ActivePerl 5.12 (x64) without %PATH% settings
+   aperl64514.bat        --- find and run ActivePerl 5.14 (x64) without %PATH% settings
+   aperl64516.bat        --- find and run ActivePerl 5.16 (x64) without %PATH% settings
    sperl58.bat           --- find and run Strawberry Perl 5.8  without %PATH% settings
    sperl510.bat          --- find and run Strawberry Perl 5.10 without %PATH% settings
    sperl512.bat          --- find and run Strawberry Perl 5.12 without %PATH% settings
    sperl514.bat          --- find and run Strawberry Perl 5.14 without %PATH% settings
    sperl516.bat          --- find and run Strawberry Perl 5.16 without %PATH% settings
-
+   sperl64512.bat        --- find and run Strawberry Perl 5.12 (x64) without %PATH% settings
+   sperl64514.bat        --- find and run Strawberry Perl 5.14 (x64) without %PATH% settings
+   sperl64516.bat        --- find and run Strawberry Perl 5.16 (x64) without %PATH% settings
    strict.pm_            --- dummy strict.pm
    warnings.pm_          --- poor warnings.pm
    warnings/register.pm_ --- poor warnings/register.pm
@@ -5924,7 +5969,7 @@ GB18030.pm applies multiple-octet anchoring at beginning of regular expression.
   --------------------------------------------------------------------------------
   Before                  After
   --------------------------------------------------------------------------------
-  m/regexp/               m/@{Egb18030::anchor}(?:regexp).../
+  m/regexp/               m/${Egb18030::anchor}(?:regexp).../
   --------------------------------------------------------------------------------
 
 =head1 Escaping Second Octet (GB18030.pm provides)
@@ -5948,8 +5993,8 @@ from classic Perl character class shortcuts and POSIX-style character classes.
   --------------------------------------------------------------------------------
   m/...MULTIOCT+.../      m/...(?:MULTIOCT)+.../
   m/...[AN-EM].../        m/...(?:A[N-Z]|[B-D][A-Z]|E[A-M]).../
-  m/...\D.../             m/...@{Egb18030::eD}.../
-  m/...[[:^digit:]].../   m/...@{Egb18030::not_digit}.../
+  m/...\D.../             m/...${Egb18030::eD}.../
+  m/...[[:^digit:]].../   m/...${Egb18030::not_digit}.../
   --------------------------------------------------------------------------------
 
 =head1 Calling 'Egb18030::ignorecase()' (GB18030.pm provides)
@@ -5969,17 +6014,23 @@ Regular expression works as character-oriented that has no /b modifier.
   --------------------------------------------------------------------------------
   Before                  After
   --------------------------------------------------------------------------------
-  /regexp/                /ditto@Egb18030::matched/
-  m/regexp/               m/ditto@Egb18030::matched/
-  ?regexp?                m?ditto@Egb18030::matched?
-  m?regexp?               m?ditto@Egb18030::matched?
-  s/regexp/replacement/   ($_ =~ m/ditto@Egb18030::matched/) ?
-                          eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; 1 } :
+  /regexp/                /ditto$Egb18030::matched/
+  m/regexp/               m/ditto$Egb18030::matched/
+  ?regexp?                m?ditto$Egb18030::matched?
+  m?regexp?               m?ditto$Egb18030::matched?
+ 
+  $_ =~                   ($_ =~ m/ditto$Egb18030::matched/) ?
+  s/regexp/replacement/   eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; 1 } :
                           undef
+ 
+  $_ !~                   ($_ !~ m/ditto$Egb18030::matched/) ?
+  s/regexp/replacement/   1 :
+                          eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; undef }
+ 
   split(/regexp/)         Egb18030::split(qr/regexp/)
   split(m/regexp/)        Egb18030::split(qr/regexp/)
   split(qr/regexp/)       Egb18030::split(qr/regexp/)
-  qr/regexp/              qr/ditto@Egb18030::matched/
+  qr/regexp/              qr/ditto$Egb18030::matched/
   --------------------------------------------------------------------------------
 
 =head1 Byte-Oriented Regular Expression
@@ -5989,17 +6040,23 @@ Regular expression works as byte-oriented that has /b modifier.
   --------------------------------------------------------------------------------
   Before                  After
   --------------------------------------------------------------------------------
-  /regexp/b               /(?:regexp)@Egb18030::matched/
-  m/regexp/b              m/(?:regexp)@Egb18030::matched/
-  ?regexp?b               m?regexp@Egb18030::matched?
-  m?regexp?b              m?regexp@Egb18030::matched?
-  s/regexp/replacement/b  ($_ =~ m/(\G[\x00-\xFF]*?)(?:regexp)@Egb18030::matched/) ?
-                          eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; 1 } :
+  /regexp/b               /(?:regexp)$Egb18030::matched/
+  m/regexp/b              m/(?:regexp)$Egb18030::matched/
+  ?regexp?b               m?regexp$Egb18030::matched?
+  m?regexp?b              m?regexp$Egb18030::matched?
+ 
+  $_ =~                   ($_ =~ m/(\G[\x00-\xFF]*?)(?:regexp)$Egb18030::matched/) ?
+  s/regexp/replacement/b  eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; 1 } :
                           undef
+ 
+  $_ !~                   ($_ !~ m/(\G[\x00-\xFF]*?)(?:regexp)$Egb18030::matched/) ?
+  s/regexp/replacement/b  1 :
+                          eval{ Egb18030::s_matched(); local $^W=0; my $__r=qq/replacement/; $_="${1}$__r$'"; undef }
+ 
   split(/regexp/b)        split(qr/regexp/)
   split(m/regexp/b)       split(qr/regexp/)
   split(qr/regexp/b)      split(qr/regexp/)
-  qr/regexp/b             qr/(?:regexp)@Egb18030::matched/
+  qr/regexp/b             qr/(?:regexp)$Egb18030::matched/
   --------------------------------------------------------------------------------
 
 =head1 Escaping Character Classes (Egb18030.pm provides)
@@ -6009,22 +6066,22 @@ The character classes are redefined as follows to backward compatibility.
   ---------------------------------------------------------------
   Before        After
   ---------------------------------------------------------------
-   .            @{Egb18030::dot}
-                @{Egb18030::dot_s}    (/s modifier)
+   .            ${Egb18030::dot}
+                ${Egb18030::dot_s}    (/s modifier)
   \d            [0-9]
   \s            [\x09\x0A\x0C\x0D\x20]
   \w            [0-9A-Z_a-z]
-  \D            @{Egb18030::eD}
-  \S            @{Egb18030::eS}
-  \W            @{Egb18030::eW}
+  \D            ${Egb18030::eD}
+  \S            ${Egb18030::eS}
+  \W            ${Egb18030::eW}
   \h            [\x09\x20]
   \v            [\x0A\x0B\x0C\x0D]
-  \H            @{Egb18030::eH}
-  \V            @{Egb18030::eV}
+  \H            ${Egb18030::eH}
+  \V            ${Egb18030::eV}
   \C            [\x00-\xFF]
   \X            X (so, just 'X')
-  \R            @{Egb18030::eR}
-  \N            @{Egb18030::eN}
+  \R            ${Egb18030::eR}
+  \N            ${Egb18030::eN}
   ---------------------------------------------------------------
 
 Also POSIX-style character classes.
@@ -6048,22 +6105,22 @@ Also POSIX-style character classes.
                 [\x41-\x5A\x61-\x7A]     (/i modifier)
   [:word:]      [\x30-\x39\x41-\x5A\x5F\x61-\x7A]
   [:xdigit:]    [\x30-\x39\x41-\x46\x61-\x66]
-  [:^alnum:]    @{Egb18030::not_alnum}
-  [:^alpha:]    @{Egb18030::not_alpha}
-  [:^ascii:]    @{Egb18030::not_ascii}
-  [:^blank:]    @{Egb18030::not_blank}
-  [:^cntrl:]    @{Egb18030::not_cntrl}
-  [:^digit:]    @{Egb18030::not_digit}
-  [:^graph:]    @{Egb18030::not_graph}
-  [:^lower:]    @{Egb18030::not_lower}
-                @{Egb18030::not_lower_i}    (/i modifier)
-  [:^print:]    @{Egb18030::not_print}
-  [:^punct:]    @{Egb18030::not_punct}
-  [:^space:]    @{Egb18030::not_space}
-  [:^upper:]    @{Egb18030::not_upper}
-                @{Egb18030::not_upper_i}    (/i modifier)
-  [:^word:]     @{Egb18030::not_word}
-  [:^xdigit:]   @{Egb18030::not_xdigit}
+  [:^alnum:]    ${Egb18030::not_alnum}
+  [:^alpha:]    ${Egb18030::not_alpha}
+  [:^ascii:]    ${Egb18030::not_ascii}
+  [:^blank:]    ${Egb18030::not_blank}
+  [:^cntrl:]    ${Egb18030::not_cntrl}
+  [:^digit:]    ${Egb18030::not_digit}
+  [:^graph:]    ${Egb18030::not_graph}
+  [:^lower:]    ${Egb18030::not_lower}
+                ${Egb18030::not_lower_i}    (/i modifier)
+  [:^print:]    ${Egb18030::not_print}
+  [:^punct:]    ${Egb18030::not_punct}
+  [:^space:]    ${Egb18030::not_space}
+  [:^upper:]    ${Egb18030::not_upper}
+                ${Egb18030::not_upper_i}    (/i modifier)
+  [:^word:]     ${Egb18030::not_word}
+  [:^xdigit:]   ${Egb18030::not_xdigit}
   ---------------------------------------------------------------
 
 Also \b and \B are redefined as follows to backward compatibility.
@@ -6071,8 +6128,8 @@ Also \b and \B are redefined as follows to backward compatibility.
   ---------------------------------------------------------------
   Before      After
   ---------------------------------------------------------------
-  \b          @{Egb18030::eb}
-  \B          @{Egb18030::eB}
+  \b          ${Egb18030::eb}
+  \B          ${Egb18030::eB}
   ---------------------------------------------------------------
 
 Definitions in Egb18030.pm.
@@ -6080,34 +6137,34 @@ Definitions in Egb18030.pm.
   ---------------------------------------------------------------------------------------------------------------------------------------------------------
   After                    Definition
   ---------------------------------------------------------------------------------------------------------------------------------------------------------
-  @{Egb18030::anchor}         qr{\G(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])*?}
-  @{Egb18030::dot}            qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])}
-  @{Egb18030::dot_s}          qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
-  @{Egb18030::eD}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9])}
-  @{Egb18030::eS}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0C\x0D\x20])}
-  @{Egb18030::eW}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9A-Z_a-z])}
-  @{Egb18030::eH}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])}
-  @{Egb18030::eV}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A\x0B\x0C\x0D])}
-  @{Egb18030::eR}             qr{(?:\x0D\x0A|[\x0A\x0D])}
-  @{Egb18030::eN}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])}
-  @{Egb18030::not_alnum}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x61-\x7A])}
-  @{Egb18030::not_alpha}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A\x61-\x7A])}
-  @{Egb18030::not_ascii}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x7F])}
-  @{Egb18030::not_blank}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])}
-  @{Egb18030::not_cntrl}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x1F\x7F])}
-  @{Egb18030::not_digit}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39])}
-  @{Egb18030::not_graph}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x7F])}
-  @{Egb18030::not_lower}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x61-\x7A])}
-  @{Egb18030::not_lower_i}    qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
-  @{Egb18030::not_print}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x20-\x7F])}
-  @{Egb18030::not_punct}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x2F\x3A-\x3F\x40\x5B-\x5F\x60\x7B-\x7E])}
-  @{Egb18030::not_space}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])}
-  @{Egb18030::not_upper}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A])}
-  @{Egb18030::not_upper_i}    qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
-  @{Egb18030::not_word}       qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x5F\x61-\x7A])}
-  @{Egb18030::not_xdigit}     qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x46\x61-\x66])}
-  @{Egb18030::eb}             qr{(?:\A(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[0-9A-Z_a-z])|(?<=[0-9A-Z_a-z])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]|\z))}
-  @{Egb18030::eB}             qr{(?:(?<=[0-9A-Z_a-z])(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]))}
+  ${Egb18030::anchor}         qr{\G(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])*?}
+  ${Egb18030::dot}            qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])}
+  ${Egb18030::dot_s}          qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
+  ${Egb18030::eD}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9])}
+  ${Egb18030::eS}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0C\x0D\x20])}
+  ${Egb18030::eW}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9A-Z_a-z])}
+  ${Egb18030::eH}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])}
+  ${Egb18030::eV}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A\x0B\x0C\x0D])}
+  ${Egb18030::eR}             qr{(?:\x0D\x0A|[\x0A\x0D])}
+  ${Egb18030::eN}             qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])}
+  ${Egb18030::not_alnum}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x61-\x7A])}
+  ${Egb18030::not_alpha}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A\x61-\x7A])}
+  ${Egb18030::not_ascii}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x7F])}
+  ${Egb18030::not_blank}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])}
+  ${Egb18030::not_cntrl}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x1F\x7F])}
+  ${Egb18030::not_digit}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39])}
+  ${Egb18030::not_graph}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x7F])}
+  ${Egb18030::not_lower}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x61-\x7A])}
+  ${Egb18030::not_lower_i}    qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
+  ${Egb18030::not_print}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x20-\x7F])}
+  ${Egb18030::not_punct}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x2F\x3A-\x3F\x40\x5B-\x5F\x60\x7B-\x7E])}
+  ${Egb18030::not_space}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])}
+  ${Egb18030::not_upper}      qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A])}
+  ${Egb18030::not_upper_i}    qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])}
+  ${Egb18030::not_word}       qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x5F\x61-\x7A])}
+  ${Egb18030::not_xdigit}     qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x46\x61-\x66])}
+  ${Egb18030::eb}             qr{(?:\A(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[0-9A-Z_a-z])|(?<=[0-9A-Z_a-z])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]|\z))}
+  ${Egb18030::eB}             qr{(?:(?<=[0-9A-Z_a-z])(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]))}
   ---------------------------------------------------------------------------------------------------------------------------------------------------------
 
 =head1 Un-Escaping \ Of \N, \p, \P and \X (GB18030.pm provides)
@@ -6115,17 +6172,21 @@ Definitions in Egb18030.pm.
 GB18030.pm removes '\' at head of alphanumeric regexp metasymbols \N, \p, \P
 and \X. By this method, you can avoid the trap of the abstraction.
 
+See also,
+Deprecate literal unescaped "{" in regexes.
+http://perl5.git.perl.org/perl.git/commit/2a53d3314d380af5ab5283758219417c6dfa36e9
+
   ------------------------------------
   Before           After
   ------------------------------------
-  \N{CHARNAME}     N{CHARNAME}
-  \p{L}            p{L}
-  \p{^L}           p{^L}
-  \p{\^L}          p{\^L}
+  \N{CHARNAME}     N\{CHARNAME}
+  \p{L}            p\{L}
+  \p{^L}           p\{^L}
+  \p{\^L}          p\{\^L}
   \pL              pL
-  \P{L}            P{L}
-  \P{^L}           P{^L}
-  \P{\^L}          P{\^L}
+  \P{L}            P\{L}
+  \P{^L}           P\{^L}
+  \P{\^L}          P\{\^L}
   \PL              PL
   \X               X
   ------------------------------------
@@ -6921,7 +6982,36 @@ Back when Programming Perl, 3rd ed. was written, UTF8 flag was not born
 and Perl is designed to make the easy jobs easy. This software provide
 programming environment like at that time.
 
+=head1 Words Of Learning Perl
+
+   Some computer scientists (the reductionists, in particular) would
+  like to deny it, but people have funny-shaped minds. Mental geography
+  is not linear, and cannot be mapped onto a flat surface without
+  severe distortion. But for the last score years or so, computer
+  reductionists have been first bowing down at the Temple of Orthogonality,
+  then rising up to preach their ideas of ascetic rectitude to any who
+  would listen.
+ 
+   Their fervent but misguided desire was simply to squash your mind to
+  fit their mindset, to smush your patterns of thought into some sort of
+  Hyperdimensional Flatland. It's a joyless existence, being smushed.
+ 
+  --- Learning Perl on Win32 Systems
+ 
+  If you think this is a big headache, you're right. No one likes
+  this situation, but Perl does the best it can with the input and
+  encodings it has to deal with. If only we could reset history and
+  not make so many mistakes nest time.
+ 
+  --- Learning Perl 6th Edition
+
 =head1 SEE ALSO
+
+ PERL PUROGURAMINGU
+ Larry Wall, Randal L.Schwartz, Yoshiyuki Kondo
+ December 1997
+ ISBN 4-89052-384-7
+ http://www.context.co.jp/~cond/books/old-books.html
 
  Programming Perl, Second Edition
  By Larry Wall, Tom Christiansen, Randal L. Schwartz
@@ -7038,12 +7128,6 @@ programming environment like at that time.
  Pages: 512
  ISBN 10:0-596-52068-9 | ISBN 13: 978-0-596-52068-7
  http://shop.oreilly.com/product/9780596520694.do
-
- PERL PUROGURAMINGU
- Larry Wall, Randal L.Schwartz, Yoshiyuki Kondo
- December 1997
- ISBN 4-89052-384-7
- http://www.context.co.jp/~cond/books/old-books.html
 
  JIS KANJI JITEN
  Kouji Shibano
