@@ -27,7 +27,7 @@ BEGIN {
 # (and so on)
 
 BEGIN { eval q{ use vars qw($VERSION) } }
-$VERSION = sprintf '%d.%02d', q$Revision: 0.83 $ =~ /(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.84 $ =~ /(\d+)/xmsg;
 
 BEGIN {
     my $PERL5LIB = __FILE__;
@@ -194,9 +194,46 @@ else {
 }
 
 #
+# @ARGV wildcard globbing
+#
+sub import() {
+
+    if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
+        my @argv = ();
+        for (@ARGV) {
+
+            # has space
+            if (/\A (?:$q_char)*? [ ] /oxms) {
+                if (my @glob = Char::Egb18030::glob(qq{"$_"})) {
+                    push @argv, @glob;
+                }
+                else {
+                    push @argv, $_;
+                }
+            }
+
+            # has wildcard metachar
+            elsif (/\A (?:$q_char)*? [*?] /oxms) {
+                if (my @glob = Char::Egb18030::glob($_)) {
+                    push @argv, @glob;
+                }
+                else {
+                    push @argv, $_;
+                }
+            }
+
+            # no wildcard globbing
+            else {
+                push @argv, $_;
+            }
+        }
+        @ARGV = @argv;
+    }
+}
+
+#
 # Prototypes of subroutines
 #
-sub import() {}
 sub unimport() {}
 sub Char::Egb18030::split(;$$$);
 sub Char::Egb18030::tr($$$$;$);
@@ -363,27 +400,6 @@ ${Char::Egb18030::not_word}    = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x
 ${Char::Egb18030::not_xdigit}  = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x46\x61-\x66])};
 ${Char::Egb18030::eb}          = qr{(?:\A(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[0-9A-Z_a-z])|(?<=[0-9A-Z_a-z])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]|\z))};
 ${Char::Egb18030::eB}          = qr{(?:(?<=[0-9A-Z_a-z])(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]))};
-
-#
-# @ARGV wildcard globbing
-#
-if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
-    if ($ENV{'ComSpec'} =~ / (?: COMMAND\.COM | CMD\.EXE ) \z /oxmsi) {
-        my @argv = ();
-        for (@ARGV) {
-            if (/\A ' ((?:$q_char)*) ' \z/oxms) {
-                push @argv, $1;
-            }
-            elsif (/\A (?:$q_char)*? [*?] /oxms and (my @glob = Char::Egb18030::glob($_))) {
-                push @argv, @glob;
-            }
-            else {
-                push @argv, $_;
-            }
-        }
-        @ARGV = @argv;
-    }
-}
 
 #
 # GB18030 split
@@ -1072,6 +1088,13 @@ sub classic_character_class($) {
         '\S' => '${Char::Egb18030::eS}',
         '\W' => '${Char::Egb18030::eW}',
         '\d' => '[0-9]',
+
+        # Before Perl 5.6, \s only matched the five whitespace characters
+        # tab, newline, form-feed, carriage return, and the space character
+        # itself, which, taken together, is the character class [\t\n\f\r ].
+        # We can still use the ASCII whitespace semantics using this
+        # software.
+
                  # \t  \n  \f  \r space
         '\s' => '[\x09\x0A\x0C\x0D\x20]',
 
@@ -2176,6 +2199,118 @@ sub charlist_not_qr {
 }
 
 #
+# open file in read mode
+#
+sub _open_r {
+    my(undef,$file) = @_;
+    $file =~ s#\A ([\x09\x0A\x0C\x0D\x20]) #./$1#oxms;
+    return eval(q{open($_[0],'<',$_[1])}) ||
+                  open($_[0],"< $file\0");
+}
+
+#
+# open file in write mode
+#
+sub _open_w {
+    my(undef,$file) = @_;
+    $file =~ s#\A ([\x09\x0A\x0C\x0D\x20]) #./$1#oxms;
+    return eval(q{open($_[0],'>',$_[1])}) ||
+                  open($_[0],"> $file\0");
+}
+
+#
+# open file in append mode
+#
+sub _open_a {
+    my(undef,$file) = @_;
+    $file =~ s#\A ([\x09\x0A\x0C\x0D\x20]) #./$1#oxms;
+    return eval(q{open($_[0],'>>',$_[1])}) ||
+                  open($_[0],">> $file\0");
+}
+
+#
+# safe system
+#
+sub _systemx {
+
+    # P.707 29.2.33. exec
+    # in Chapter 29: Functions
+    # of ISBN 0-596-00027-8 Programming Perl Third Edition.
+    #
+    # Be aware that in older releases of Perl, exec (and system) did not flush
+    # your output buffer, so you needed to enable command buffering by setting $|
+    # on one or more filehandles to avoid lost output in the case of exec, or
+    # misordererd output in the case of system. This situation was largely remedied
+    # in the 5.6 release of Perl. (So, 5.005 release not yet.)
+
+    # P.855 exec
+    # in Chapter 27: Functions
+    # of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
+    #
+    # In very old release of Perl (before v5.6), exec (and system) did not flush
+    # your output buffer, so you needed to enable command buffering by setting $|
+    # on one or more filehandles to avoid lost output with exec or misordered
+    # output with system.
+
+    $| = 1;
+
+    # P.565 23.1.2. Cleaning Up Your Environment
+    # in Chapter 23: Security
+    # of ISBN 0-596-00027-8 Programming Perl Third Edition.
+
+    # P.656 Cleaning Up Your Environment
+    # in Chapter 20: Security
+    # of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
+
+    # local $ENV{'PATH'} = '.';
+    local @ENV{qw(IFS CDPATH ENV BASH_ENV)}; # Make %ENV safer
+
+    # P.707 29.2.33. exec
+    # in Chapter 29: Functions
+    # of ISBN 0-596-00027-8 Programming Perl Third Edition.
+    #
+    # As we mentioned earlier, exec treats a discrete list of arguments as an
+    # indication that it should bypass shell processing. However, there is one
+    # place where you might still get tripped up. The exec call (and system, too)
+    # will not distinguish between a single scalar argument and an array containing
+    # only one element.
+    #
+    #     @args = ("echo surprise");  # just one element in list
+    #     exec @args                  # still subject to shell escapes
+    #         or die "exec: $!";      #   because @args == 1
+    #
+    # To avoid this, you can use the PATHNAME syntax, explicitly duplicating the
+    # first argument as the pathname, which forces the rest of the arguments to be
+    # interpreted as a list, even if there is only one of them:
+    #
+    #     exec { $args[0] } @args  # safe even with one-argument list
+    #         or die "can't exec @args: $!";
+
+    # P.855 exec
+    # in Chapter 27: Functions
+    # of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
+    #
+    # As we mentioned earlier, exec treats a discrete list of arguments as a
+    # directive to bypass shell processing. However, there is one place where
+    # you might still get tripped up. The exec call (and system, too) cannot
+    # distinguish between a single scalar argument and an array containing
+    # only one element.
+    #
+    #     @args = ("echo surprise");  # just one element in list
+    #     exec @args                  # still subject to shell escapes
+    #         || die "exec: $!";      #   because @args == 1
+    #
+    # To avoid this, use the PATHNAME syntax, explicitly duplicating the first
+    # argument as the pathname, which forces the rest of the arguments to be
+    # interpreted as a list, even if there is only one of them:
+    #
+    #     exec { $args[0] } @args  # safe even with one-argument list
+    #         || die "can't exec @args: $!";
+
+    return CORE::system { $_[0] } @_; # safe even with one-argument list
+}
+
+#
 # GB18030 order to character (with parameter)
 #
 sub Char::Egb18030::chr(;$) {
@@ -2267,8 +2402,13 @@ sub Char::Egb18030::r(;*@) {
             return wantarray ? (-r _,@_) : -r _;
         }
         else {
+
+            # Even if ${^WIN32_SLOPPY_STAT} is set to a true value, Char::Egb18030::*()
+            # on Windows opens the file for the path which has 5c at end.
+            # (and so on)
+
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $r = -r $fh;
                 close $fh;
                 return wantarray ? ($r,@_) : $r;
@@ -2301,7 +2441,7 @@ sub Char::Egb18030::w(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, ">>$_") {
+            if (_open_a($fh, $_)) {
                 my $w = -w $fh;
                 close $fh;
                 return wantarray ? ($w,@_) : $w;
@@ -2334,7 +2474,7 @@ sub Char::Egb18030::x(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $dummy_for_underline_cache = -x $fh;
                 close $fh;
             }
@@ -2369,7 +2509,7 @@ sub Char::Egb18030::o(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $o = -o $fh;
                 close $fh;
                 return wantarray ? ($o,@_) : $o;
@@ -2402,7 +2542,7 @@ sub Char::Egb18030::R(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $R = -R $fh;
                 close $fh;
                 return wantarray ? ($R,@_) : $R;
@@ -2435,7 +2575,7 @@ sub Char::Egb18030::W(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, ">>$_") {
+            if (_open_a($fh, $_)) {
                 my $W = -W $fh;
                 close $fh;
                 return wantarray ? ($W,@_) : $W;
@@ -2468,7 +2608,7 @@ sub Char::Egb18030::X(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $dummy_for_underline_cache = -X $fh;
                 close $fh;
             }
@@ -2503,7 +2643,7 @@ sub Char::Egb18030::O(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $O = -O $fh;
                 close $fh;
                 return wantarray ? ($O,@_) : $O;
@@ -2547,7 +2687,7 @@ sub Char::Egb18030::e(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $e = -e $fh;
                 close $fh;
                 return wantarray ? ($e,@_) : $e;
@@ -2580,7 +2720,7 @@ sub Char::Egb18030::z(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $z = -z $fh;
                 close $fh;
                 return wantarray ? ($z,@_) : $z;
@@ -2613,7 +2753,7 @@ sub Char::Egb18030::s(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $s = -s $fh;
                 close $fh;
                 return wantarray ? ($s,@_) : $s;
@@ -2646,7 +2786,7 @@ sub Char::Egb18030::f(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $f = -f $fh;
                 close $fh;
                 return wantarray ? ($f,@_) : $f;
@@ -2704,7 +2844,7 @@ sub Char::Egb18030::l(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $l = -l $fh;
                 close $fh;
                 return wantarray ? ($l,@_) : $l;
@@ -2737,7 +2877,7 @@ sub Char::Egb18030::p(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $p = -p $fh;
                 close $fh;
                 return wantarray ? ($p,@_) : $p;
@@ -2770,7 +2910,7 @@ sub Char::Egb18030::S(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $S = -S $fh;
                 close $fh;
                 return wantarray ? ($S,@_) : $S;
@@ -2803,7 +2943,7 @@ sub Char::Egb18030::b(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $b = -b $fh;
                 close $fh;
                 return wantarray ? ($b,@_) : $b;
@@ -2836,7 +2976,7 @@ sub Char::Egb18030::c(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $c = -c $fh;
                 close $fh;
                 return wantarray ? ($c,@_) : $c;
@@ -2869,7 +3009,7 @@ sub Char::Egb18030::u(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $u = -u $fh;
                 close $fh;
                 return wantarray ? ($u,@_) : $u;
@@ -2902,7 +3042,7 @@ sub Char::Egb18030::g(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $g = -g $fh;
                 close $fh;
                 return wantarray ? ($g,@_) : $g;
@@ -2997,7 +3137,9 @@ sub Char::Egb18030::T(;*@) {
         }
 
         $fh = gensym();
-        unless (open $fh, $_) {
+        if (_open_r($fh, $_)) {
+        }
+        else {
             return wantarray ? (undef,@_) : undef;
         }
         if (sysread $fh, my $block, 512) {
@@ -3061,7 +3203,9 @@ sub Char::Egb18030::B(;*@) {
         }
 
         $fh = gensym();
-        unless (open $fh, $_) {
+        if (_open_r($fh, $_)) {
+        }
+        else {
             return wantarray ? (undef,@_) : undef;
         }
         if (sysread $fh, my $block, 512) {
@@ -3107,7 +3251,7 @@ sub Char::Egb18030::M(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $M = ($^T - $mtime) / (24*60*60);
@@ -3141,7 +3285,7 @@ sub Char::Egb18030::A(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $A = ($^T - $atime) / (24*60*60);
@@ -3175,7 +3319,7 @@ sub Char::Egb18030::C(;*@) {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $C = ($^T - $ctime) / (24*60*60);
@@ -3218,7 +3362,7 @@ sub Char::Egb18030::r_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $r = -r $fh;
                 close $fh;
                 return $r ? 1 : '';
@@ -3242,7 +3386,7 @@ sub Char::Egb18030::w_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, ">>$_") {
+            if (_open_a($fh, $_)) {
                 my $w = -w $fh;
                 close $fh;
                 return $w ? 1 : '';
@@ -3266,7 +3410,7 @@ sub Char::Egb18030::x_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $dummy_for_underline_cache = -x $fh;
                 close $fh;
             }
@@ -3292,7 +3436,7 @@ sub Char::Egb18030::o_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $o = -o $fh;
                 close $fh;
                 return $o ? 1 : '';
@@ -3316,7 +3460,7 @@ sub Char::Egb18030::R_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $R = -R $fh;
                 close $fh;
                 return $R ? 1 : '';
@@ -3340,7 +3484,7 @@ sub Char::Egb18030::W_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, ">>$_") {
+            if (_open_a($fh, $_)) {
                 my $W = -W $fh;
                 close $fh;
                 return $W ? 1 : '';
@@ -3364,7 +3508,7 @@ sub Char::Egb18030::X_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $dummy_for_underline_cache = -X $fh;
                 close $fh;
             }
@@ -3390,7 +3534,7 @@ sub Char::Egb18030::O_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $O = -O $fh;
                 close $fh;
                 return $O ? 1 : '';
@@ -3414,7 +3558,7 @@ sub Char::Egb18030::e_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $e = -e $fh;
                 close $fh;
                 return $e ? 1 : '';
@@ -3438,7 +3582,7 @@ sub Char::Egb18030::z_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $z = -z $fh;
                 close $fh;
                 return $z ? 1 : '';
@@ -3462,7 +3606,7 @@ sub Char::Egb18030::s_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $s = -s $fh;
                 close $fh;
                 return $s;
@@ -3486,7 +3630,7 @@ sub Char::Egb18030::f_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $f = -f $fh;
                 close $fh;
                 return $f ? 1 : '';
@@ -3524,7 +3668,7 @@ sub Char::Egb18030::l_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $l = -l $fh;
                 close $fh;
                 return $l ? 1 : '';
@@ -3548,7 +3692,7 @@ sub Char::Egb18030::p_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $p = -p $fh;
                 close $fh;
                 return $p ? 1 : '';
@@ -3572,7 +3716,7 @@ sub Char::Egb18030::S_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $S = -S $fh;
                 close $fh;
                 return $S ? 1 : '';
@@ -3596,7 +3740,7 @@ sub Char::Egb18030::b_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $b = -b $fh;
                 close $fh;
                 return $b ? 1 : '';
@@ -3620,7 +3764,7 @@ sub Char::Egb18030::c_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $c = -c $fh;
                 close $fh;
                 return $c ? 1 : '';
@@ -3644,7 +3788,7 @@ sub Char::Egb18030::u_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $u = -u $fh;
                 close $fh;
                 return $u ? 1 : '';
@@ -3668,7 +3812,7 @@ sub Char::Egb18030::g_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $g = -g $fh;
                 close $fh;
                 return $g ? 1 : '';
@@ -3700,7 +3844,9 @@ sub Char::Egb18030::T_() {
         return;
     }
     my $fh = gensym();
-    unless (open $fh, $_) {
+    if (_open_r($fh, $_)) {
+    }
+    else {
         return;
     }
 
@@ -3734,7 +3880,9 @@ sub Char::Egb18030::B_() {
         return;
     }
     my $fh = gensym();
-    unless (open $fh, $_) {
+    if (_open_r($fh, $_)) {
+    }
+    else {
         return;
     }
 
@@ -3771,7 +3919,7 @@ sub Char::Egb18030::M_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $M = ($^T - $mtime) / (24*60*60);
@@ -3796,7 +3944,7 @@ sub Char::Egb18030::A_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $A = ($^T - $atime) / (24*60*60);
@@ -3821,7 +3969,7 @@ sub Char::Egb18030::C_() {
         }
         else {
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = CORE::stat $fh;
                 close $fh;
                 my $C = ($^T - $ctime) / (24*60*60);
@@ -3838,14 +3986,14 @@ sub Char::Egb18030::C_() {
 sub Char::Egb18030::glob($) {
 
     if (wantarray) {
-        my @glob = _dosglob(@_);
+        my @glob = _DOS_like_glob(@_);
         for my $glob (@glob) {
             $glob =~ s{ \A (?:\./)+ }{}oxms;
         }
         return @glob;
     }
     else {
-        my $glob = _dosglob(@_);
+        my $glob = _DOS_like_glob(@_);
         $glob =~ s{ \A (?:\./)+ }{}oxms;
         return $glob;
     }
@@ -3857,14 +4005,14 @@ sub Char::Egb18030::glob($) {
 sub Char::Egb18030::glob_() {
 
     if (wantarray) {
-        my @glob = _dosglob();
+        my @glob = _DOS_like_glob();
         for my $glob (@glob) {
             $glob =~ s{ \A (?:\./)+ }{}oxms;
         }
         return @glob;
     }
     else {
-        my $glob = _dosglob();
+        my $glob = _DOS_like_glob();
         $glob =~ s{ \A (?:\./)+ }{}oxms;
         return $glob;
     }
@@ -3873,9 +4021,12 @@ sub Char::Egb18030::glob_() {
 #
 # GB18030 path globbing from File::DosGlob module
 #
+# Often I confuse "_dosglob" and "_doglob".
+# So, I renamed "_dosglob" to "_DOS_like_glob".
+#
 my %iter;
 my %entries;
-sub _dosglob {
+sub _DOS_like_glob {
 
     # context (keyed by second cxix argument provided by core)
     my($expr,$cxix) = @_;
@@ -4137,16 +4288,21 @@ sub Char::Egb18030::lstat(*) {
         return CORE::lstat _;
     }
     elsif (_MSWin32_5Cended_path($_)) {
+
+        # Even if ${^WIN32_SLOPPY_STAT} is set to a true value, Char::Egb18030::lstat()
+        # on Windows opens the file for the path which has 5c at end.
+        # (and so on)
+
         my $fh = gensym();
         if (wantarray) {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my @lstat = CORE::stat $fh; # not CORE::lstat
                 close $fh;
                 return @lstat;
             }
         }
         else {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $lstat = CORE::stat $fh; # not CORE::lstat
                 close $fh;
                 return $lstat;
@@ -4167,14 +4323,14 @@ sub Char::Egb18030::lstat_() {
     elsif (_MSWin32_5Cended_path($_)) {
         my $fh = gensym();
         if (wantarray) {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my @lstat = CORE::stat $fh; # not CORE::lstat
                 close $fh;
                 return @lstat;
             }
         }
         else {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $lstat = CORE::stat $fh; # not CORE::lstat
                 close $fh;
                 return $lstat;
@@ -4216,16 +4372,21 @@ sub Char::Egb18030::stat(*) {
         return CORE::stat _;
     }
     elsif (_MSWin32_5Cended_path($_)) {
+
+        # Even if ${^WIN32_SLOPPY_STAT} is set to a true value, Char::Egb18030::stat()
+        # on Windows opens the file for the path which has 5c at end.
+        # (and so on)
+
         my $fh = gensym();
         if (wantarray) {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my @stat = CORE::stat $fh;
                 close $fh;
                 return @stat;
             }
         }
         else {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $stat = CORE::stat $fh;
                 close $fh;
                 return $stat;
@@ -4250,14 +4411,14 @@ sub Char::Egb18030::stat_() {
     elsif (_MSWin32_5Cended_path($_)) {
         my $fh = gensym();
         if (wantarray) {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my @stat = CORE::stat $fh;
                 close $fh;
                 return @stat;
             }
         }
         else {
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 my $stat = CORE::stat $fh;
                 close $fh;
                 return $stat;
@@ -4288,10 +4449,11 @@ sub Char::Egb18030::unlink(@) {
                 $file = qq{"$file"};
             }
 
-            system 'del', $file, '2>NUL';
+            # internal command 'del' of command.com or cmd.exe
+            CORE::system 'del', $file, '2>NUL';
 
             my $fh = gensym();
-            if (open $fh, $_) {
+            if (_open_r($fh, $_)) {
                 close $fh;
             }
             else {
@@ -4430,7 +4592,7 @@ ITER_DO:
 
                 if (Char::Egb18030::e("$realfilename.e")) {
                     my $fh = gensym();
-                    if (open $fh, "$realfilename.e") {
+                    if (_open_a($fh, "$realfilename.e")) {
                         if ($^O eq 'MacOS') {
                             eval q{
                                 CORE::require Mac::Files;
@@ -4472,7 +4634,7 @@ ITER_DO:
                 }
                 else {
                     my $fh = gensym();
-                    open $fh, $realfilename;
+                    _open_r($fh, $realfilename);
                     local $/ = undef; # slurp mode
                     $script = <$fh>;
                     close $fh;
@@ -4481,8 +4643,8 @@ ITER_DO:
                         CORE::require Char::GB18030;
                         $script = Char::GB18030::escape_script($script);
                         my $fh = gensym();
-                        if ((eval q{ use Fcntl qw(O_WRONLY O_APPEND O_CREAT); 1 } and CORE::sysopen($fh, "$realfilename.e", &O_WRONLY|&O_APPEND|&O_CREAT))
-                            or open($fh, ">>$realfilename.e")
+                        if ((eval q{ use Fcntl qw(O_WRONLY O_APPEND O_CREAT); 1 } and CORE::sysopen($fh, "$realfilename.e", &O_WRONLY|&O_APPEND|&O_CREAT)) or
+                            _open_a($fh, "$realfilename.e")
                         ) {
                             if ($^O eq 'MacOS') {
                                 eval q{
@@ -4649,7 +4811,7 @@ ITER_REQUIRE:
 
                 if (Char::Egb18030::e("$realfilename.e")) {
                     my $fh = gensym();
-                    open($fh, "$realfilename.e") or croak "Can't open file: $realfilename.e";
+                    _open_r($fh, "$realfilename.e") or croak "Can't open file: $realfilename.e";
                     if ($^O eq 'MacOS') {
                         eval q{
                             CORE::require Mac::Files;
@@ -4679,7 +4841,7 @@ ITER_REQUIRE:
                 }
                 else {
                     my $fh = gensym();
-                    open($fh, $realfilename) or croak "Can't open file: $realfilename";
+                    _open_r($fh, $realfilename) or croak "Can't open file: $realfilename";
                     local $/ = undef; # slurp mode
                     $script = <$fh>;
                     close($fh) or croak "Can't close file: $realfilename";
@@ -4691,7 +4853,7 @@ ITER_REQUIRE:
                         if (eval q{ use Fcntl qw(O_WRONLY O_APPEND O_CREAT); 1 } and CORE::sysopen($fh,"$realfilename.e",&O_WRONLY|&O_APPEND|&O_CREAT)) {
                         }
                         else {
-                            open($fh, ">>$realfilename.e") or croak "Can't write open file: $realfilename.e";
+                            _open_a($fh, "$realfilename.e") or croak "Can't write open file: $realfilename.e";
                         }
                         if ($^O eq 'MacOS') {
                             eval q{
@@ -5270,7 +5432,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $chop = Char::Egb18030::chop();
   $chop = Char::Egb18030::chop;
 
-  This fubction chops off the last character of a string variable and returns the
+  This function chops off the last character of a string variable and returns the
   character chopped. The Char::Egb18030::chop function is used primary to remove the newline
   from the end of an input recoed, and it is more efficient than using a
   substitution. If that's all you're doing, then it would be safer to use chomp,
@@ -5495,30 +5657,55 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   the file doesn't exist or is otherwise inaccessible. Currently implemented file
   test functions are listed in:
 
+  Available in MSWin32, MacOS, and UNIX-like systems
   ------------------------------------------------------------------------------
   Function and Prototype     Meaning
   ------------------------------------------------------------------------------
-  Char::Egb18030::r(*), Char::Egb18030::r_()   File is readable by effective uid/gid.
-  Char::Egb18030::w(*), Char::Egb18030::w_()   File is writable by effective uid/gid.
-  Char::Egb18030::x(*), Char::Egb18030::x_()   File is executable by effective uid/gid.
-  Char::Egb18030::o(*), Char::Egb18030::o_()   File is owned by effective uid.
-  Char::Egb18030::R(*), Char::Egb18030::R_()   File is readable by real uid/gid.
-  Char::Egb18030::W(*), Char::Egb18030::W_()   File is writable by real uid/gid.
-  Char::Egb18030::X(*), Char::Egb18030::X_()   File is executable by real uid/gid.
-  Char::Egb18030::O(*), Char::Egb18030::O_()   File is owned by real uid.
-  Char::Egb18030::e(*), Char::Egb18030::e_()   File exists.
-  Char::Egb18030::z(*), Char::Egb18030::z_()   File has zero size.
-  Char::Egb18030::f(*), Char::Egb18030::f_()   File is a plain file.
-  Char::Egb18030::d(*), Char::Egb18030::d_()   File is a directory.
-  Char::Egb18030::l(*), Char::Egb18030::l_()   File is a symbolic link.
-  Char::Egb18030::p(*), Char::Egb18030::p_()   File is a named pipe (FIFO).
-  Char::Egb18030::S(*), Char::Egb18030::S_()   File is a socket.
-  Char::Egb18030::b(*), Char::Egb18030::b_()   File is a block special file.
-  Char::Egb18030::c(*), Char::Egb18030::c_()   File is a character special file.
-  Char::Egb18030::u(*), Char::Egb18030::u_()   File has setuid bit set.
-  Char::Egb18030::g(*), Char::Egb18030::g_()   File has setgid bit set.
-  Char::Egb18030::k(*), Char::Egb18030::k_()   File has sticky bit set.
+  Char::Egb18030::r(*), Char::Egb18030::r_()   File or directory is readable by this (effective) user or group
+  Char::Egb18030::w(*), Char::Egb18030::w_()   File or directory is writable by this (effective) user or group
+  Char::Egb18030::e(*), Char::Egb18030::e_()   File or directory name exists
+  Char::Egb18030::x(*), Char::Egb18030::x_()   File or directory is executable by this (effective) user or group
+  Char::Egb18030::z(*), Char::Egb18030::z_()   File exists and has zero size (always false for directories)
+  Char::Egb18030::f(*), Char::Egb18030::f_()   Entry is a plain file
+  Char::Egb18030::d(*), Char::Egb18030::d_()   Entry is a directory
   ------------------------------------------------------------------------------
+  
+  Available in MacOS and UNIX-like systems
+  ------------------------------------------------------------------------------
+  Function and Prototype     Meaning
+  ------------------------------------------------------------------------------
+  Char::Egb18030::R(*), Char::Egb18030::R_()   File or directory is readable by this real user or group
+                             Same as Char::Egb18030::r(*), Char::Egb18030::r_() on MacOS
+  Char::Egb18030::W(*), Char::Egb18030::W_()   File or directory is writable by this real user or group
+                             Same as Char::Egb18030::w(*), Char::Egb18030::w_() on MacOS
+  Char::Egb18030::X(*), Char::Egb18030::X_()   File or directory is executable by this real user or group
+                             Same as Char::Egb18030::x(*), Char::Egb18030::x_() on MacOS
+  Char::Egb18030::l(*), Char::Egb18030::l_()   Entry is a symbolic link
+  Char::Egb18030::S(*), Char::Egb18030::S_()   Entry is a socket
+  ------------------------------------------------------------------------------
+  
+  Not available in MSWin32 and MacOS
+  ------------------------------------------------------------------------------
+  Function and Prototype     Meaning
+  ------------------------------------------------------------------------------
+  Char::Egb18030::o(*), Char::Egb18030::o_()   File or directory is owned by this (effective) user
+  Char::Egb18030::O(*), Char::Egb18030::O_()   File or directory is owned by this real user
+  Char::Egb18030::p(*), Char::Egb18030::p_()   Entry is a named pipe (a "fifo")
+  Char::Egb18030::b(*), Char::Egb18030::b_()   Entry is a block-special file (like a mountable disk)
+  Char::Egb18030::c(*), Char::Egb18030::c_()   Entry is a character-special file (like an I/O device)
+  Char::Egb18030::u(*), Char::Egb18030::u_()   File or directory is setuid
+  Char::Egb18030::g(*), Char::Egb18030::g_()   File or directory is setgid
+  Char::Egb18030::k(*), Char::Egb18030::k_()   File or directory has the sticky bit set
+  ------------------------------------------------------------------------------
+
+  The tests -T and -B takes a try at telling whether a file is text or binary.
+  But people who know a lot about filesystems know that there's no bit (at least
+  in UNIX-like operating systems) to indicate that a file is a binary or text file
+  --- so how can Perl tell?
+  The answer is that Perl cheats. As you might guess, it sometimes guesses wrong.
+
+  This incomplete thinking of file test operator -T and -B gave birth to UTF8 flag
+  of a later period.
 
   The Char::Egb18030::T, Char::Egb18030::T_, Char::Egb18030::B and Char::Egb18030::B_ work as follows. The first block
   or so of the file is examined for strange chatracters such as
@@ -5537,11 +5724,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   next unless Char::Egb18030::f($file) && Char::Egb18030::T($file);
 
+  Available in MSWin32, MacOS, and UNIX-like systems
   ------------------------------------------------------------------------------
   Function and Prototype     Meaning
   ------------------------------------------------------------------------------
-  Char::Egb18030::T(*), Char::Egb18030::T_()   File is a text file.
-  Char::Egb18030::B(*), Char::Egb18030::B_()   File is a binary file (opposite of -T).
+  Char::Egb18030::T(*), Char::Egb18030::T_()   File looks like a "text" file
+  Char::Egb18030::B(*), Char::Egb18030::B_()   File looks like a "binary" file
   ------------------------------------------------------------------------------
 
   File ages for Char::Egb18030::M, Char::Egb18030::M_, Char::Egb18030::A, Char::Egb18030::A_, Char::Egb18030::C, and Char::Egb18030::C_
@@ -5555,21 +5743,25 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   &newfile if Char::Egb18030::M($file) < 0;       # file is newer than process
   &mailwarning if int(Char::Egb18030::A_) == 90;  # file ($_) was accessed 90 days ago today
 
+  Available in MSWin32, MacOS, and UNIX-like systems
   ------------------------------------------------------------------------------
   Function and Prototype     Meaning
   ------------------------------------------------------------------------------
-  Char::Egb18030::M(*), Char::Egb18030::M_()   Age of file (at startup) in days since modification.
-  Char::Egb18030::A(*), Char::Egb18030::A_()   Age of file (at startup) in days since last access.
-  Char::Egb18030::C(*), Char::Egb18030::C_()   Age of file (at startup) in days since inode change.
+  Char::Egb18030::M(*), Char::Egb18030::M_()   Modification age (measured in days)
+  Char::Egb18030::A(*), Char::Egb18030::A_()   Access age (measured in days)
+                             Same as Char::Egb18030::M(*), Char::Egb18030::M_() on MacOS
+  Char::Egb18030::C(*), Char::Egb18030::C_()   Inode-modification age (measured in days)
   ------------------------------------------------------------------------------
 
   The Char::Egb18030::s, and Char::Egb18030::s_ returns file size in bytes if succesful, or undef
   unless successful.
 
+  Available in MSWin32, MacOS, and UNIX-like systems
   ------------------------------------------------------------------------------
   Function and Prototype     Meaning
   ------------------------------------------------------------------------------
-  Char::Egb18030::s(*), Char::Egb18030::s_()   File has nonzero size (returns size in bytes).
+  Char::Egb18030::s(*), Char::Egb18030::s_()   File or directory exists and has nonzero size
+                             (the value is the size in bytes)
   ------------------------------------------------------------------------------
 
 =item Filename expansion (globbing)
@@ -5578,20 +5770,16 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   @glob = Char::Egb18030::glob_;
 
   This function returns the value of $string with filename expansions the way a
-  shell would expand them, returning the next successive name on each call.
-  If $string is omitted, $_ is globbed instead. This is the internal function
-  implementing the <*> operator.
+  DOS-like shell would expand them, returning the next successive name on each
+  call. If $string is omitted, $_ is globbed instead. This is the internal
+  function implementing the <*> and glob operator.
   This function function when the pathname ends with chr(0x5C) on MSWin32.
 
-  For economic reasons, the algorithm matches the command.com or cmd.exe's style
-  of expansion, not the UNIX-like shell's. An asterisk ("*") matches any sequence
-  of any character (including none). A question mark ("?") matches any one
-  character or none. A tilde ("~") expands to a home directory, as in "~/.*rc"
-  for all the current user's "rc" files, or "~jane/Mail/*" for all of Jane's mail
-  files.
-
-  For example, C<<..\\l*b\\file/*glob.p?>> on MSWin32 or UNIX will work as
-  expected (in that it will find something like '..\lib\File/DosGlob.pm' alright).
+  For ease of use, the algorithm matches the DOS-like shell's style of expansion,
+  not the UNIX-like shell's. An asterisk ("*") matches any sequence of any
+  character (including none). A question mark ("?") matches any one character or
+  none. A tilde ("~") expands to a home directory, as in "~/.*rc" for all the
+  current user's "rc" files, or "~jane/Mail/*" for all of Jane's mail files.
 
   Note that all path components are case-insensitive, and that backslashes and
   forward slashes are both accepted, and preserved. You may have to double the
@@ -5613,10 +5801,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   @spacies = Char::Egb18030::glob("'*${var}e f*'");
   @spacies = Char::Egb18030::glob(qq("*${var}e f*"));
 
-  Hint: Programmer Efficiency
+  Another way on MSWin32
 
-  "When I'm on Windows, I use split(/\n/,`dir /s /b *.* 2>NUL`) instead of glob('*.*')"
-  -- ina
+  # relative path
+  @relpath_file = split(/\n/,`dir /b wildcard\\here*.txt 2>NUL`);
+
+  # absolute path
+  @abspath_file = split(/\n/,`dir /s /b wildcard\\here*.txt 2>NUL`);
 
 =item Statistics about link
 
@@ -5627,7 +5818,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   link, Char::Egb18030::lstat returns information about the link; Char::Egb18030::stat returns
   information about the file pointed to by the link. If symbolic links are
   unimplemented on your system, a normal Char::Egb18030::stat is done instead. If file is
-  omitted, returns information on file given in $_.
+  omitted, returns information on file given in $_. Returns values (especially
+  device and inode) may be bogus.
   This function function when the filename ends with chr(0x5C) on MSWin32.
 
 =item Open directory handle
@@ -5665,18 +5857,38 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   Index  Field      Meaning
   -------------------------------------------------------------------------
     0    $dev       Device number of filesystem
+                    drive number for MSWin32
+                    vRefnum for MacOS
     1    $ino       Inode number
+                    zero for MSWin32
+                    fileID/dirID for MacOS
     2    $mode      File mode (type and permissions)
     3    $nlink     Nunmer of (hard) links to the file
+                    usually one for MSWin32 --- NTFS filesystems may
+                    have a value greater than one
+                    1 for MacOS
     4    $uid       Numeric user ID of file's owner
+                    zero for MSWin32
+                    zero for MacOS
     5    $gid       Numeric group ID of file's owner
+                    zero for MSWin32
+                    zero for MacOS
     6    $rdev      The device identifier (special files only)
+                    drive number for MSWin32
+                    NULL for MacOS
     7    $size      Total size of file, in bytes
     8    $atime     Last access time since the epoch
+                    same as $mtime for MacOS
     9    $mtime     Last modification time since the epoch
+                    since 1904-01-01 00:00:00 for MacOS
    10    $ctime     Inode change time (not creation time!) since the epoch
+                    creation time instead of inode change time for MSWin32
+                    since 1904-01-01 00:00:00 for MacOS
    11    $blksize   Preferred blocksize for file system I/O
+                    zero for MSWin32
    12    $blocks    Actual number of blocks allocated
+                    zero for MSWin32
+                    int(($size + $blksize-1) / $blksize) for MacOS
   -------------------------------------------------------------------------
 
   $dev and $ino, token together, uniquely identify a file on the same system.
