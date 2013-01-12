@@ -3,7 +3,7 @@ package Char::Egb18030;
 #
 # Char::Egb18030 - Run-time routines for Char/GB18030.pm
 #
-# Copyright (c) 2008, 2009, 2010, 2011, 2012 INABA Hitoshi <ina@cpan.org>
+# Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013 INABA Hitoshi <ina@cpan.org>
 #
 ######################################################################
 
@@ -27,7 +27,7 @@ BEGIN {
 # (and so on)
 
 BEGIN { eval q{ use vars qw($VERSION) } }
-$VERSION = sprintf '%d.%02d', q$Revision: 0.84 $ =~ /(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.85 $ =~ /(\d+)/xmsg;
 
 BEGIN {
     my $PERL5LIB = __FILE__;
@@ -87,14 +87,14 @@ BEGIN {
 
         my $ref = \*{$genpkg . $name};
         delete $$genpkg{$name};
-        $ref;
+        return $ref;
     }
 
     sub qualify ($;$) {
         my ($name) = @_;
         if (!ref($name) && (Char::Egb18030::index($name, '::') == -1) && (Char::Egb18030::index($name, "'") == -1)) {
             my $pkg;
-            my %global = map {$_ => 1} qw(ARGV ARGVOUT ENV INC SIG STDERR STDIN STDOUT);
+            my %global = map {$_ => 1} qw(ARGV ARGVOUT ENV INC SIG STDERR STDIN STDOUT DATA);
 
             # Global names: special character, "^xyz", or other.
             if ($name =~ /^(([^\x81-\xFEa-z])|(\^[a-z_]+))\z/i || $global{$name}) {
@@ -107,7 +107,7 @@ BEGIN {
             }
             $name = $pkg . "::" . $name;
         }
-        $name;
+        return $name;
     }
 
     sub qualify_to_ref ($;$) {
@@ -118,9 +118,14 @@ BEGIN {
     }
 }
 
+# Column: local $@
+# in Chapter 9. Osaete okitai Perl no kiso
+# of ISBN 10: 4798119172 | ISBN 13: 978-4798119175 MODAN Perl NYUMON
+# (and so on)
+
 # use strict; if strict.pm exists
 BEGIN {
-    if (eval {CORE::require strict}) {
+    if (eval { local $@; CORE::require strict }) {
         strict::->import;
     }
 }
@@ -139,12 +144,12 @@ sub LOCK_UN() {8}
 sub LOCK_NB() {4}
 
 # instead of Carp.pm
-sub carp(@);
-sub croak(@);
-sub cluck(@);
-sub confess(@);
+sub carp;
+sub croak;
+sub cluck;
+sub confess;
 
-my $your_char = q{[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[\x00-\xFF]};
+my $your_char = q{[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[\x00-\xFF]};
 
 # regexp of character
 my $q_char = qr/$your_char/oxms;
@@ -196,7 +201,7 @@ else {
 #
 # @ARGV wildcard globbing
 #
-sub import() {
+sub import {
 
     if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
         my @argv = ();
@@ -231,10 +236,28 @@ sub import() {
     }
 }
 
+# P.230 Care with Prototypes
+# in Chapter 6: Subroutines
+# of ISBN 0-596-00027-8 Programming Perl Third Edition.
+#
+# If you aren't careful, you can get yourself into trouble with prototypes.
+# But if you are careful, you can do a lot of neat things with them. This is
+# all very powerful, of course, and should only be used in moderation to make
+# the world a better place.
+
+# P.332 Care with Prototypes
+# in Chapter 7: Subroutines
+# of ISBN 978-0-596-00492-7 Programming Perl 4th Edition.
+#
+# If you aren't careful, you can get yourself into trouble with prototypes.
+# But if you are careful, you can do a lot of neat things with them. This is
+# all very powerful, of course, and should only be used in moderation to make
+# the world a better place.
+
 #
 # Prototypes of subroutines
 #
-sub unimport() {}
+sub unimport {}
 sub Char::Egb18030::split(;$$$);
 sub Char::Egb18030::tr($$$$;$);
 sub Char::Egb18030::chop(@);
@@ -250,12 +273,12 @@ sub Char::Egb18030::uc(@);
 sub Char::Egb18030::uc_();
 sub Char::Egb18030::fc(@);
 sub Char::Egb18030::fc_();
-sub Char::Egb18030::ignorecase(@);
-sub Char::Egb18030::classic_character_class($);
-sub Char::Egb18030::capture($);
+sub Char::Egb18030::ignorecase;
+sub Char::Egb18030::classic_character_class;
+sub Char::Egb18030::capture;
 sub Char::Egb18030::chr(;$);
 sub Char::Egb18030::chr_();
-sub Char::Egb18030::filetest(@);
+sub Char::Egb18030::filetest;
 sub Char::Egb18030::r(;*@);
 sub Char::Egb18030::w(;*@);
 sub Char::Egb18030::x(;*@);
@@ -282,7 +305,7 @@ sub Char::Egb18030::B(;*@);
 sub Char::Egb18030::M(;*@);
 sub Char::Egb18030::A(;*@);
 sub Char::Egb18030::C(;*@);
-sub Char::Egb18030::filetest_(@);
+sub Char::Egb18030::filetest_;
 sub Char::Egb18030::r_();
 sub Char::Egb18030::w_();
 sub Char::Egb18030::x_();
@@ -325,6 +348,7 @@ sub Char::Egb18030::telldir(*);
 sub Char::GB18030::ord(;$);
 sub Char::GB18030::ord_();
 sub Char::GB18030::reverse(@);
+sub Char::GB18030::getc(;*@);
 sub Char::GB18030::length(;$);
 sub Char::GB18030::substr($$;$$);
 sub Char::GB18030::index($$;$);
@@ -364,40 +388,40 @@ BEGIN { eval q{ use vars qw(
     $eB
     $matched
 ) } }
-${Char::Egb18030::anchor}      = qr{\G(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])*?};
-${Char::Egb18030::dot}         = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])};
-${Char::Egb18030::dot_s}       = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])};
-${Char::Egb18030::eD}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9])};
+${Char::Egb18030::anchor}      = qr{\G(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE])*?};
+${Char::Egb18030::dot}         = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x0A])};
+${Char::Egb18030::dot_s}       = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE])};
+${Char::Egb18030::eD}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE0-9])};
 
-${Char::Egb18030::eS}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0C\x0D\x20])};
+${Char::Egb18030::eS}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x09\x0A\x0C\x0D\x20])};
 
 # Incompatible Changes
 # \s in regular expressions now matches a Vertical Tab (experimental)
 # http://search.cpan.org/~zefram/perl-5.17.0/pod/perldelta.pod
 
-# ${Char::Egb18030::eS}        = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])};
+# ${Char::Egb18030::eS}        = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])};
 
-${Char::Egb18030::eW}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE0-9A-Z_a-z])};
-${Char::Egb18030::eH}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])};
-${Char::Egb18030::eV}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A\x0B\x0C\x0D])};
+${Char::Egb18030::eW}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE0-9A-Z_a-z])};
+${Char::Egb18030::eH}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x09\x20])};
+${Char::Egb18030::eV}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x0A\x0B\x0C\x0D])};
 ${Char::Egb18030::eR}          = qr{(?:\x0D\x0A|[\x0A\x0D])};
-${Char::Egb18030::eN}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x0A])};
-${Char::Egb18030::not_alnum}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x61-\x7A])};
-${Char::Egb18030::not_alpha}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A\x61-\x7A])};
-${Char::Egb18030::not_ascii}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x7F])};
-${Char::Egb18030::not_blank}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x20])};
-${Char::Egb18030::not_cntrl}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x00-\x1F\x7F])};
-${Char::Egb18030::not_digit}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39])};
-${Char::Egb18030::not_graph}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x7F])};
-${Char::Egb18030::not_lower}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x61-\x7A])};
-${Char::Egb18030::not_lower_i} = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])};
-${Char::Egb18030::not_print}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x20-\x7F])};
-${Char::Egb18030::not_punct}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x21-\x2F\x3A-\x3F\x40\x5B-\x5F\x60\x7B-\x7E])};
-${Char::Egb18030::not_space}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])};
-${Char::Egb18030::not_upper}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x41-\x5A])};
-${Char::Egb18030::not_upper_i} = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE])};
-${Char::Egb18030::not_word}    = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x5A\x5F\x61-\x7A])};
-${Char::Egb18030::not_xdigit}  = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\x30-\x39\x41-\x46\x61-\x66])};
+${Char::Egb18030::eN}          = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x0A])};
+${Char::Egb18030::not_alnum}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x30-\x39\x41-\x5A\x61-\x7A])};
+${Char::Egb18030::not_alpha}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x41-\x5A\x61-\x7A])};
+${Char::Egb18030::not_ascii}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x00-\x7F])};
+${Char::Egb18030::not_blank}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x09\x20])};
+${Char::Egb18030::not_cntrl}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x00-\x1F\x7F])};
+${Char::Egb18030::not_digit}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x30-\x39])};
+${Char::Egb18030::not_graph}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x21-\x7F])};
+${Char::Egb18030::not_lower}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x61-\x7A])};
+${Char::Egb18030::not_lower_i} = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE])};
+${Char::Egb18030::not_print}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x20-\x7F])};
+${Char::Egb18030::not_punct}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x21-\x2F\x3A-\x3F\x40\x5B-\x5F\x60\x7B-\x7E])};
+${Char::Egb18030::not_space}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x09\x0A\x0B\x0C\x0D\x20])};
+${Char::Egb18030::not_upper}   = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x41-\x5A])};
+${Char::Egb18030::not_upper_i} = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE])};
+${Char::Egb18030::not_word}    = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x30-\x39\x41-\x5A\x5F\x61-\x7A])};
+${Char::Egb18030::not_xdigit}  = qr{(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\x30-\x39\x41-\x46\x61-\x66])};
 ${Char::Egb18030::eb}          = qr{(?:\A(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[0-9A-Z_a-z])|(?<=[0-9A-Z_a-z])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]|\z))};
 ${Char::Egb18030::eB}          = qr{(?:(?<=[0-9A-Z_a-z])(?=[0-9A-Z_a-z])|(?<=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF])(?=[\x00-\x2F\x40\x5B-\x5E\x60\x7B-\xFF]))};
 
@@ -899,7 +923,7 @@ sub Char::Egb18030::fc_() {
 
     my $last_s_matched = 0;
 
-    sub Char::Egb18030::capture($) {
+    sub Char::Egb18030::capture {
         if ($last_s_matched and ($_[0] =~ /\A [1-9][0-9]* \z/oxms)) {
             return $_[0] + 1;
         }
@@ -930,7 +954,7 @@ sub Char::Egb18030::fc_() {
 #
 # GB18030 regexp ignore case modifier
 #
-sub Char::Egb18030::ignorecase(@) {
+sub Char::Egb18030::ignorecase {
 
     my @string = @_;
     my $metachar = qr/[\@\\|[\]{]/oxms;
@@ -1080,7 +1104,7 @@ sub Char::Egb18030::ignorecase(@) {
 #
 # classic character class ( \D \S \W \d \s \w \C \X \H \V \h \v \R \N \b \B )
 #
-sub classic_character_class($) {
+sub Char::Egb18030::classic_character_class {
     my($char) = @_;
 
     return {
@@ -1426,7 +1450,7 @@ sub _octets {
         my($z1) = unpack 'C', $_[1];
 
         if ($a1 > $z1) {
-            croak 'Invalid [] range in regexp (ord(A) > ord(B)) ' . '\x' . unpack('H*',$a1) . '-\x' . unpack('H*',$z1);
+            croak 'Invalid [] range in regexp (CORE::ord(A) > CORE::ord(B)) ' . '\x' . unpack('H*',$a1) . '-\x' . unpack('H*',$z1);
         }
 
         if ($a1 == $z1) {
@@ -1861,7 +1885,7 @@ sub _charlist {
             }
             elsif (CORE::length($char[$i-1]) == CORE::length($char[$i+1])) {
                 if ($char[$i-1] gt $char[$i+1]) {
-                    croak 'Invalid [] range in regexp (ord(A) > ord(B)) ' . '\x' . unpack('H*',$char[$i-1]) . '-\x' . unpack('H*',$char[$i+1]);
+                    croak 'Invalid [] range in regexp (CORE::ord(A) > CORE::ord(B)) ' . '\x' . unpack('H*',$char[$i-1]) . '-\x' . unpack('H*',$char[$i+1]);
                 }
             }
 
@@ -2176,7 +2200,7 @@ sub charlist_not_qr {
         if (scalar(@singleoctet) >= 1) {
 
             # any character other than multiple-octet and single octet character class
-            return '(?!' . join('|', @multipleoctet) . ')(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE' . join('', @singleoctet) . '])';
+            return '(?!' . join('|', @multipleoctet) . ')(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE' . join('', @singleoctet) . '])';
         }
         else {
 
@@ -2188,7 +2212,7 @@ sub charlist_not_qr {
         if (scalar(@singleoctet) >= 1) {
 
             # any character other than single octet character class
-            return                                      '(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE' . join('', @singleoctet) . '])';
+            return                                      '(?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE' . join('', @singleoctet) . '])';
         }
         else {
 
@@ -2353,7 +2377,7 @@ sub Char::Egb18030::chr_() {
 #
 # GB18030 stacked file test expr
 #
-sub Char::Egb18030::filetest(@) {
+sub Char::Egb18030::filetest {
 
     my $file     = pop @_;
     my $filetest = substr(pop @_, 1);
@@ -2361,7 +2385,7 @@ sub Char::Egb18030::filetest(@) {
     unless (eval qq{Char::Egb18030::$filetest(\$file)}) {
         return '';
     }
-    for my $filetest (reverse @_) {
+    for my $filetest (CORE::reverse @_) {
         unless (eval qq{ $filetest _ }) {
             return '';
         }
@@ -3333,14 +3357,14 @@ sub Char::Egb18030::C(;*@) {
 #
 # GB18030 stacked file test $_
 #
-sub Char::Egb18030::filetest_(@) {
+sub Char::Egb18030::filetest_ {
 
     my $filetest = substr(pop @_, 1);
 
     unless (eval qq{Char::Egb18030::${filetest}_}) {
         return '';
     }
-    for my $filetest (reverse @_) {
+    for my $filetest (CORE::reverse @_) {
         unless (eval qq{ $filetest _ }) {
             return '';
         }
@@ -3369,7 +3393,45 @@ sub Char::Egb18030::r_() {
             }
         }
     }
-    return;
+
+# 2010-01-26 The difference of "return;" and "return undef;" 
+# http://d.hatena.ne.jp/gfx/20100126/1264474754
+#
+# "Perl Best Practices" recommends to use "return;"*1 to return nothing, but
+# it might be wrong in some cases. If you use this idiom for those functions
+# which are expected to return a scalar value, e.g. searching functions, the
+# user of those functions will be surprised at what they return in list
+# context, an empty list - note that many functions and all the methods
+# evaluate their arguments in list context. You'd better to use "return undef;"
+# for such scalar functions.
+#
+#     sub search_something {
+#         my($arg) = @_;
+#         # search_something...
+#         if(defined $found){
+#             return $found;
+#         }
+#         return; # XXX: you'd better to "return undef;"
+#     }
+#
+#     # ...
+#
+#     # you'll get what you want, but ...
+#     my $something = search_something($source);
+#
+#     # you won't get what you want here.
+#     # @_ for doit() is (-foo => $opt), not (undef, -foo => $opt).
+#     $obj->doit(search_something($source), -option=> $optval);
+#
+#     # you have to use the "scalar" operator in such a case.
+#     $obj->doit(scalar search_something($source), ...);
+#
+# *1ÅFit returns an empty list in list context, or returns undef in scalar
+#     context
+#
+# (and so on)
+
+    return undef;
 }
 
 #
@@ -3393,7 +3455,7 @@ sub Char::Egb18030::w_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3419,7 +3481,7 @@ sub Char::Egb18030::x_() {
             return '';
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3443,7 +3505,7 @@ sub Char::Egb18030::o_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3467,7 +3529,7 @@ sub Char::Egb18030::R_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3491,7 +3553,7 @@ sub Char::Egb18030::W_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3517,7 +3579,7 @@ sub Char::Egb18030::X_() {
             return '';
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3541,7 +3603,7 @@ sub Char::Egb18030::O_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3565,7 +3627,7 @@ sub Char::Egb18030::e_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3589,7 +3651,7 @@ sub Char::Egb18030::z_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3613,7 +3675,7 @@ sub Char::Egb18030::s_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3637,7 +3699,7 @@ sub Char::Egb18030::f_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3651,7 +3713,7 @@ sub Char::Egb18030::d_() {
     elsif (_MSWin32_5Cended_path($_)) {
         return -d "$_/." ? 1 : '';
     }
-    return;
+    return undef;
 }
 
 #
@@ -3675,7 +3737,7 @@ sub Char::Egb18030::l_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3699,7 +3761,7 @@ sub Char::Egb18030::p_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3723,7 +3785,7 @@ sub Char::Egb18030::S_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3747,7 +3809,7 @@ sub Char::Egb18030::b_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3771,7 +3833,7 @@ sub Char::Egb18030::c_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3795,7 +3857,7 @@ sub Char::Egb18030::u_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3819,7 +3881,7 @@ sub Char::Egb18030::g_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3841,13 +3903,13 @@ sub Char::Egb18030::T_() {
     my $T = 1;
 
     if (-d $_ or -d "$_/.") {
-        return;
+        return undef;
     }
     my $fh = gensym();
     if (_open_r($fh, $_)) {
     }
     else {
-        return;
+        return undef;
     }
 
     if (sysread $fh, my $block, 512) {
@@ -3877,13 +3939,13 @@ sub Char::Egb18030::B_() {
     my $B = '';
 
     if (-d $_ or -d "$_/.") {
-        return;
+        return undef;
     }
     my $fh = gensym();
     if (_open_r($fh, $_)) {
     }
     else {
-        return;
+        return undef;
     }
 
     if (sysread $fh, my $block, 512) {
@@ -3927,7 +3989,7 @@ sub Char::Egb18030::M_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3952,7 +4014,7 @@ sub Char::Egb18030::A_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -3977,7 +4039,7 @@ sub Char::Egb18030::C_() {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -4050,7 +4112,7 @@ sub _DOS_like_glob {
 
     # UNIX-like system
     else {
-        $expr =~ s{ \A ~ ( (?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE/])* ) }
+        $expr =~ s{ \A ~ ( (?:[\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE/])* ) }
                   { $1 ? (getpwnam($1))[7] : ($ENV{'HOME'} || $ENV{'LOGDIR'} || (getpwuid($<))[7]) }oxmse;
     }
 
@@ -4120,7 +4182,7 @@ OUTER:
         # wildcards with a drive prefix such as h:*.pm must be changed
         # to h:./*.pm to expand correctly
         if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
-            if ($expr =~ s# \A ((?:[A-Za-z]:)?) ([\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE/\\]) #$1./$2#oxms) {
+            if ($expr =~ s# \A ((?:[A-Za-z]:)?) ([\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE/\\]) #$1./$2#oxms) {
                 $fix_drive_relative_paths = 1;
             }
         }
@@ -4247,8 +4309,8 @@ sub _parse_line {
     $line .= ' ';
     my @piece = ();
     while ($line =~ /
-        " ( (?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE"]   )*  ) " \s+ |
-          ( (?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE"\s] )*  )   \s+
+        " ( (?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE"]   )*  ) " \s+ |
+          ( (?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE"\s] )*  )   \s+
         /oxmsg
     ) {
         push @piece, defined($1) ? $1 : $2;
@@ -4266,7 +4328,7 @@ sub _parse_path {
     $path .= '/';
     my @subpath = ();
     while ($path =~ /
-        ((?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][\x00-\xFF]|[^\x81-\xFE\/\\] )+?) [\/\\]
+        ((?: [\x81-\xFE][\x30-\x39][\x81-\xFE][\x30-\x39]|[\x81-\xFE][^\x30-\x39]|[^\x81-\xFE\/\\] )+?) [\/\\]
         /oxmsg
     ) {
         push @subpath, $1;
@@ -4309,7 +4371,7 @@ sub Char::Egb18030::lstat(*) {
             }
         }
     }
-    return;
+    return wantarray ? () : undef;
 }
 
 #
@@ -4337,7 +4399,7 @@ sub Char::Egb18030::lstat_() {
             }
         }
     }
-    return;
+    return wantarray ? () : undef;
 }
 
 #
@@ -4354,7 +4416,7 @@ sub Char::Egb18030::opendir(*$) {
             return 1;
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -4393,7 +4455,7 @@ sub Char::Egb18030::stat(*) {
             }
         }
     }
-    return;
+    return wantarray ? () : undef;
 }
 
 #
@@ -4425,7 +4487,7 @@ sub Char::Egb18030::stat_() {
             }
         }
     }
-    return;
+    return wantarray ? () : undef;
 }
 
 #
@@ -4450,7 +4512,12 @@ sub Char::Egb18030::unlink(@) {
             }
 
             # internal command 'del' of command.com or cmd.exe
-            CORE::system 'del', $file, '2>NUL';
+            if ($ENV{'COMSPEC'} =~ / \\COMMAND\.COM \z/oxmsi) {
+                CORE::system 'del', $file;
+            }
+            else {
+                CORE::system 'del', $file, '2>NUL';
+            }
 
             my $fh = gensym();
             if (_open_r($fh, $_)) {
@@ -4555,7 +4622,7 @@ sub _MSWin32_5Cended_path {
             }
         }
     }
-    return;
+    return undef;
 }
 
 #
@@ -4677,10 +4744,9 @@ ITER_DO:
                     }
                 }
 
-                if (eval {CORE::require strict}) {
+                if (eval { local $@; CORE::require strict }) {
                     strict::->unimport;
                 }
-                local $@;
                 $result = scalar eval $script;
 
                 last ITER_DO;
@@ -4690,10 +4756,10 @@ ITER_DO:
 
     if ($@) {
         $INC{$filename} = undef;
-        return;
+        return undef;
     }
     elsif (not $result) {
-        return;
+        return undef;
     }
     else {
         $INC{$filename} = $realfilename;
@@ -4885,10 +4951,9 @@ ITER_REQUIRE:
                     }
                 }
 
-                if (eval {CORE::require strict}) {
+                if (eval { local $@; CORE::require strict }) {
                     strict::->unimport;
                 }
-                local $@;
                 $result = scalar eval $script;
 
                 last ITER_REQUIRE;
@@ -5021,6 +5086,27 @@ sub Char::GB18030::reverse(@) {
 }
 
 #
+# GB18030 getc (with parameter, without parameter)
+#
+sub Char::GB18030::getc(;*@) {
+
+    my $fh = @_ ? qualify_to_ref(shift) : \*STDIN;
+    croak 'Too many arguments for Char::GB18030::getc' if @_ and not wantarray;
+
+    my @length = sort { $a <=> $b } keys %range_tr;
+    my $getc = '';
+    for my $length ($length[0] .. $length[-1]) {
+        $getc .= CORE::getc($fh);
+        if (exists $range_tr{CORE::length($getc)}) {
+            if ($getc =~ /\A ${Char::Egb18030::dot_s} \z/oxms) {
+                return wantarray ? ($getc,@_) : $getc;
+            }
+        }
+    }
+    return wantarray ? ($getc,@_) : $getc;
+}
+
+#
 # GB18030 length by character
 #
 sub Char::GB18030::length(;$) {
@@ -5117,7 +5203,7 @@ sub Char::GB18030::rindex($$;$) {
 #
 # instead of Carp::carp
 #
-sub carp(@) {
+sub carp {
     my($package,$filename,$line) = caller(1);
     print STDERR "@_ at $filename line $line.\n";
 }
@@ -5125,7 +5211,7 @@ sub carp(@) {
 #
 # instead of Carp::croak
 #
-sub croak(@) {
+sub croak {
     my($package,$filename,$line) = caller(1);
     print STDERR "@_ at $filename line $line.\n";
     die "\n";
@@ -5134,14 +5220,14 @@ sub croak(@) {
 #
 # instead of Carp::cluck
 #
-sub cluck(@) {
+sub cluck {
     my $i = 0;
     my @cluck = ();
     while (my($package,$filename,$line,$subroutine) = caller($i)) {
         push @cluck, "[$i] $filename($line) $package::$subroutine\n";
         $i++;
     }
-    print STDERR reverse @cluck;
+    print STDERR CORE::reverse @cluck;
     print STDERR "\n";
     carp @_;
 }
@@ -5149,14 +5235,14 @@ sub cluck(@) {
 #
 # instead of Carp::confess
 #
-sub confess(@) {
+sub confess {
     my $i = 0;
     my @confess = ();
     while (my($package,$filename,$line,$subroutine) = caller($i)) {
         push @confess, "[$i] $filename($line) $package::$subroutine\n";
         $i++;
     }
-    print STDERR reverse @confess;
+    print STDERR CORE::reverse @confess;
     print STDERR "\n";
     croak @_;
 }
@@ -5808,6 +5894,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   # absolute path
   @abspath_file = split(/\n/,`dir /s /b wildcard\\here*.txt 2>NUL`);
+
+  # on COMMAND.COM
+  @relpath_file = split(/\n/,`dir /b wildcard\\here*.txt`);
+  @abspath_file = split(/\n/,`dir /s /b wildcard\\here*.txt`);
 
 =item Statistics about link
 
