@@ -8,9 +8,9 @@ SYNOPSIS
 
       use Char::GB18030; # CPAN formal style
          or
-      use GB18030;
+      use GB18030; # casual style
 
-    At command prompt: # casual style
+    At command prompt:
 
       perl  yourscript.pl  wild*  *card  and  '*quote*'  on MSWin32
 
