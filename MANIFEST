@@ -2,6 +2,8 @@ Char/GB18030.pm
 Char/Egb18030.pm
 GB18030.pm
 Egb18030.pm
+GB18030.pm
+Egb18030.pm
 strict.pm_
 warnings.pm_
 warnings/register.pm_
@@ -48,6 +50,7 @@ pMakefile.PL
 MANIFEST
 test.pl
 README
+README2ND
 META.yml
 t/001_gb18030htm.t
 t/002_gb18030htm.t
@@ -398,3 +401,9 @@ t/352_substr_perldoc.t
 t/353_substr_perldoc.t
 t/354_substr_perldoc.t
 t/355_substr_perldoc.t
+t/356_split_longstr.t
+t/357_split_longstr.t
+t/358_split_longstr.t
+t/359_split_longstr.t
+t/360_split_longstr.t
+t/361_split_perl518.t

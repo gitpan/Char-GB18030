@@ -2,7 +2,7 @@
 die "This file is not encoded in Char::GB18030.\n" if q{偁} ne "\x82\xa0";
 
 use Char::GB18030;
-print "1..1\n";
+print "1..3\n";
 
 my $__FILE__ = __FILE__;
 
@@ -22,14 +22,14 @@ if (($] >= 5.010001) or
         # do test
     }
     else {
-        for my $tno (1..1) {
+        for my $tno (1..3) {
             print "ok - $tno # SKIP $^X $0\n";
         }
         exit;
     }
 }
 else {
-    for my $tno (1..1) {
+    for my $tno (1..3) {
         print "ok - $tno # SKIP $^X $0\n";
     }
     exit;
@@ -65,6 +65,70 @@ if ($data2 eq "$data$ccc") {
 }
 else {
     print "not ok - 1 $^X $__FILE__\n";
+}
+
+$data = <<END;
+<dl>
+<td>aaa</td>
+<dd>12傾僀辈炒񵼐</dd>
+</dl>
+END
+$data = $data x int(40000 / length($data));
+
+$bbb = <<END;
+<dl>
+<td>bbb</td>
+<dd>6789</dd>
+</dl>
+END
+
+$ccc = <<END;
+<dl>
+<td>ccc</td>
+<dd>6789</dd>
+</dl>
+END
+
+$data2 = "$data$bbb";
+$data2 =~ s|<td>bbb</td>|<td>ccc</td>|;
+
+if ($data2 eq "$data$ccc") {
+    print "ok - 2 $^X $__FILE__\n";
+}
+else {
+    print "not ok - 2 $^X $__FILE__\n";
+}
+
+$data = <<END;
+<dl>
+<td>aaa</td>
+<dd>12傾僀辈炒񵼐</dd>
+</dl>
+END
+$data = $data x int(40000 / length($data));
+
+$bbb = <<END;
+<dl>
+<td>bbb</td>
+<dd>傾僀񼭮</dd>
+</dl>
+END
+
+$ccc = <<END;
+<dl>
+<td>ccc</td>
+<dd>傾僀񼭮</dd>
+</dl>
+END
+
+$data2 = "$data$bbb";
+$data2 =~ s|<td>bbb</td>|<td>ccc</td>|;
+
+if ($data2 eq "$data$ccc") {
+    print "ok - 3 $^X $__FILE__\n";
+}
+else {
+    print "not ok - 3 $^X $__FILE__\n";
 }
 
 __END__
