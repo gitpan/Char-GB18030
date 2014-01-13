@@ -1,14 +1,12 @@
 NAME
 
-       Char::GB18030 - Source code filter for GB18030 script (Imitation JPerl)
+       GB18030 - Source code filter for GB18030 script (Imitation JPerl)
 
 SYNOPSIS
 
     In your script:
 
-      use Char::GB18030; # CPAN formal style
-         or
-      use GB18030; # casual style
+      use GB18030;
 
     At command prompt:
 
